@@ -1,0 +1,571 @@
+/* Hide default Frappe web navbar/footer on custom /tienda storefront */
+body[data-path="tienda"] .navbar,
+body[data-path="tienda"] .web-footer,
+.page-container > .navbar {
+  display: none !important;
+}
+
+#cima-storefront {
+  --navy: #131921;
+  --navy-2: #232f3e;
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --bg: #eaeded;
+  --card: #ffffff;
+  --text: #0f1111;
+  --muted: #565959;
+  --green: #067d62;
+  --red: #b12704;
+  --border: #d5d9d9;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* Header */
+.cima-nav {
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  background: var(--navy);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.cima-nav-main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cima-brand {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: #fff;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.cima-brand:hover { outline: 1px solid #fff; color: #fff; }
+.cima-brand-logo { font-size: 22px; font-weight: 800; letter-spacing: 1px; color: var(--accent); }
+.cima-brand-sub { font-size: 10px; letter-spacing: 1.5px; color: #cbd5e1; margin-top: 2px; }
+
+.cima-deliver-pill {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #cbd5e1;
+}
+.cima-deliver-pill strong { color: #fff; font-size: 13px; }
+
+.cima-search-bar {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.cima-search-bar select {
+  border: none;
+  background: #f3f4f6;
+  color: #334155;
+  font-size: 13px;
+  padding: 0 10px;
+  border-right: 1px solid #cbd5e1;
+  max-width: 150px;
+}
+.cima-search-bar input {
+  flex: 1;
+  border: none;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+}
+.cima-search-btn {
+  background: var(--accent);
+  border: none;
+  padding: 0 16px;
+  color: #111;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.cima-search-btn:hover { background: var(--accent-hover); }
+
+.cima-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cima-nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #fff;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.cima-nav-btn:hover { border-color: #fff; }
+.cima-nav-small { font-size: 11px; color: #cbd5e1; }
+.cima-nav-big { font-size: 13px; }
+
+.cima-cart-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.cima-cart-btn:hover { border-color: #fff; }
+.cima-cart-icon { position: relative; display: flex; }
+.cima-cart-badge {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  background: var(--accent);
+  color: #111;
+  font-size: 11px;
+  font-weight: 800;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.cima-subnav {
+  background: var(--navy-2);
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cima-subnav-cats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.cima-cat-pill {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cima-cat-pill:hover, .cima-cat-pill.active {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+.cima-subnav-payments {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
+  flex-wrap: wrap;
+}
+.cima-pay-tag {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* Hero */
+.cima-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%);
+  color: #fff;
+  padding: 28px 16px;
+}
+.cima-hero-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 24px;
+  align-items: center;
+}
+.cima-hero-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+.cima-hero-copy h1 { font-size: 28px; margin: 0 0 10px; color: #fff; font-weight: 800; line-height: 1.2; }
+.cima-hero-copy p { font-size: 14px; color: #e2e8f0; margin: 0 0 16px; max-width: 640px; }
+.cima-hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.cima-hero-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.cima-mini-perk {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cima-mini-perk strong { color: #fbbf24; font-size: 14px; }
+.cima-mini-perk span { font-size: 12px; color: #cbd5e1; }
+
+/* Buttons */
+.cima-btn-primary {
+  background: var(--accent);
+  color: #111;
+  border: 1px solid #d97706;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cima-btn-primary:hover { background: var(--accent-hover); }
+.cima-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.cima-btn-secondary {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cima-btn-secondary:hover { background: rgba(255, 255, 255, 0.22); }
+
+.cima-btn-outline {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cima-btn-outline:hover { background: #f8fafc; }
+.cima-btn-block { width: 100%; }
+
+/* Main Catalog */
+.cima-main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 18px 16px 48px;
+}
+
+.cima-toolbar {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cima-results-info { font-size: 13px; color: var(--muted); font-weight: 600; }
+.cima-toolbar-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cima-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; margin: 0; }
+.cima-toolbar-controls select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.cima-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.cima-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.cima-card:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); transform: translateY(-2px); }
+
+.cima-card-img-wrap {
+  width: 100%;
+  height: 180px;
+  background: #f8fafc;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.cima-card-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.cima-card-cat { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.cima-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 4px 0 6px;
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 40px;
+}
+.cima-card-title:hover { color: #c7511f; }
+
+.cima-stock-badge { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.cima-stock-in { color: var(--green); }
+.cima-stock-out { color: var(--red); }
+
+.cima-price-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.cima-price-main { font-size: 22px; font-weight: 800; color: var(--text); }
+.cima-cashea-mini {
+  font-size: 11px;
+  color: #4338ca;
+  background: #eef2ff;
+  padding: 3px 7px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.cima-card-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cima-qty-box {
+  width: 64px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* Pagination */
+.cima-pagination {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Drawer & Modals */
+.cima-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 1000;
+}
+.cima-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 96vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.2);
+}
+.cima-drawer-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cima-drawer-header h2 { margin: 0; font-size: 18px; }
+.cima-drawer-body { flex: 1; overflow-y: auto; padding: 14px; }
+.cima-drawer-footer { padding: 14px; border-top: 1px solid var(--border); background: #f8fafc; }
+
+.cima-cart-item {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+  align-items: center;
+}
+.cima-cart-item img { width: 56px; height: 56px; object-fit: contain; border-radius: 6px; background: #f8fafc; }
+.cima-cart-qty-input {
+  width: 64px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  text-align: center;
+  font-weight: 700;
+}
+.cima-totals-box { margin-bottom: 12px; font-size: 14px; }
+.cima-total-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.cima-total-grand { font-size: 17px; font-weight: 800; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+.cima-cashea-hint { font-size: 12px; color: #4338ca; font-weight: 600; margin-top: 4px; }
+
+.cima-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.cima-modal-card {
+  background: #fff;
+  border-radius: 12px;
+  width: 520px;
+  max-width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 24px;
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+.cima-modal-lg { width: 780px; }
+.cima-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+.cima-modal-close { position: absolute; top: 14px; right: 16px; }
+
+.cima-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.cima-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--muted);
+}
+.cima-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.cima-field { margin-bottom: 12px; }
+.cima-field label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; color: #334155; }
+.cima-field input, .cima-field select, .cima-field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.cima-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.cima-google-btn {
+  width: 100%;
+  background: #fff;
+  color: #1f2937;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.cima-google-btn:hover { background: #f8fafc; }
+
+.cima-pay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.cima-pay-option {
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  background: #fff;
+  text-align: left;
+}
+.cima-pay-option.selected { border-color: var(--accent); background: #fffbeb; }
+.cima-pay-option-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-top: 4px;
+}
+
+.cima-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 1200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 820px) {
+  .cima-hero-inner { grid-template-columns: 1fr; }
+  .cima-grid-2 { grid-template-columns: 1fr; }
+  .cima-deliver-pill { display: none; }
+}

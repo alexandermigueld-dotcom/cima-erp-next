@@ -1,0 +1,190 @@
+{% extends "templates/web.html" %}
+
+{% block title %}CIMA ELECTRONIC VE | Tienda Online{% endblock %}
+
+{% block head_include %}
+<link rel="stylesheet" href="/assets/cima_ve/css/tienda.css?v=1">
+<script async src="https://pay.google.com/gp/p/js/pay.js"></script>
+{% endblock %}
+
+{% block page_content %}
+<div id="cima-storefront" data-csrf="{{ csrf_token }}">
+  <!-- Top Amazon-style Header -->
+  <header class="cima-nav">
+    <div class="cima-nav-main">
+      <a href="/tienda" class="cima-brand">
+        <span class="cima-brand-logo">CIMA</span>
+        <span class="cima-brand-sub">ELECTRONIC VE</span>
+      </a>
+
+      <div class="cima-deliver-pill" title="Despacho desde almacén principal">
+        <span class="cima-deliver-label">Envíos desde</span>
+        <strong id="nav-warehouse">Venezuela</strong>
+      </div>
+
+      <form id="nav-search-form" class="cima-search-bar">
+        <select id="nav-category-select" aria-label="Categoría">
+          <option value="">Todas</option>
+        </select>
+        <input
+          id="nav-search-input"
+          type="search"
+          placeholder="Buscar audífonos, cargadores, televisores, accesorios..."
+          autocomplete="off"
+        />
+        <button type="submit" class="cima-search-btn" aria-label="Buscar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </button>
+      </form>
+
+      <div class="cima-nav-actions">
+        <button type="button" id="btn-account" class="cima-nav-btn">
+          <span class="cima-nav-small" id="nav-user-greeting">Hola, Identifícate</span>
+          <strong class="cima-nav-big" id="nav-user-label">Cuenta y RIF</strong>
+        </button>
+
+        <button type="button" id="btn-orders" class="cima-nav-btn">
+          <span class="cima-nav-small">Historial</span>
+          <strong class="cima-nav-big">Mis Pedidos</strong>
+        </button>
+
+        <button type="button" id="btn-cart" class="cima-cart-btn">
+          <span class="cima-cart-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+            <span id="cart-badge" class="cima-cart-badge">0</span>
+          </span>
+          <span class="cima-cart-text">Carrito</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Category Sub-nav -->
+    <div class="cima-subnav">
+      <div class="cima-subnav-cats" id="subnav-categories">
+        <button type="button" class="cima-cat-pill active" data-cat="">Todos</button>
+      </div>
+      <div class="cima-subnav-payments">
+        <span>Pagos aceptados:</span>
+        <span class="cima-pay-tag">Cashea</span>
+        <span class="cima-pay-tag">Google Pay / Tarjetas</span>
+        <span class="cima-pay-tag">Pago Móvil</span>
+        <span class="cima-pay-tag">Zelle</span>
+        <span class="cima-pay-tag">Binance</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Banner -->
+  <section class="cima-hero">
+    <div class="cima-hero-inner">
+      <div class="cima-hero-copy">
+        <span class="cima-hero-eyebrow">Catálogo en tiempo real • Precios Detal USD</span>
+        <h1>Compra tecnología y electrónica con entrega rápida y cuotas sin interés</h1>
+        <p>
+          Paga con <strong>Cashea</strong> (40% inicial + 3 cuotas), <strong>Google Pay / Tarjeta</strong> sin guardar datos,
+          <strong>Pago Móvil</strong>, <strong>Zelle</strong> o <strong>Binance Pay</strong>.
+        </p>
+        <div class="cima-hero-cta">
+          <button type="button" id="hero-in-stock-btn" class="cima-btn-primary">Ver productos disponibles</button>
+          <button type="button" id="hero-account-btn" class="cima-btn-secondary">Ingresar con Google / Crear cuenta</button>
+        </div>
+      </div>
+      <div class="cima-hero-cards">
+        <div class="cima-mini-perk">
+          <strong>Stock Real</strong>
+          <span>Sincronizado con almacén principal</span>
+        </div>
+        <div class="cima-mini-perk">
+          <strong>Cashea 0%</strong>
+          <span>Inicial 40% + 3 cuotas</span>
+        </div>
+        <div class="cima-mini-perk">
+          <strong>Google Pay</strong>
+          <span>Sin guardar tarjetas</span>
+        </div>
+        <div class="cima-mini-perk">
+          <strong>Factura Fiscal</strong>
+          <span>Guarda tu RIF opcionalmente</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Filters & Catalog -->
+  <main class="cima-main">
+    <div class="cima-toolbar">
+      <div class="cima-results-info" id="results-info">Cargando productos...</div>
+      <div class="cima-toolbar-controls">
+        <label class="cima-toggle">
+          <input type="checkbox" id="filter-in-stock" checked />
+          <span>Solo con stock disponible</span>
+        </label>
+        <select id="sort-select" aria-label="Ordenar por">
+          <option value="stock_desc">Más disponibles primero</option>
+          <option value="price_asc">Precio: menor a mayor</option>
+          <option value="price_desc">Precio: mayor a menor</option>
+          <option value="name_asc">Nombre: A - Z</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="product-grid" class="cima-product-grid"></div>
+
+    <div id="pagination-bar" class="cima-pagination"></div>
+  </main>
+
+  <!-- Cart Slide-Over Drawer -->
+  <div id="cart-backdrop" class="cima-backdrop hidden"></div>
+  <aside id="cart-drawer" class="cima-drawer hidden" aria-label="Carrito de compras">
+    <div class="cima-drawer-header">
+      <h2>Tu Carrito</h2>
+      <button type="button" class="cima-close-btn" id="close-cart-btn">&times;</button>
+    </div>
+    <div id="cart-items-list" class="cima-drawer-body"></div>
+    <div class="cima-drawer-footer">
+      <div class="cima-totals-box" id="cart-totals-box">
+        <div class="cima-total-row"><span>Subtotal</span><span id="cart-subtotal">$0.00</span></div>
+        <div class="cima-total-row"><span>IVA (16%)</span><span id="cart-iva">$0.00</span></div>
+        <div class="cima-total-row cima-total-grand"><span>Total estimado</span><span id="cart-grand">$0.00</span></div>
+        <div class="cima-cashea-hint" id="cart-cashea-hint"></div>
+      </div>
+      <button type="button" id="btn-proceed-checkout" class="cima-btn-primary cima-btn-block">
+        Proceder al Pago
+      </button>
+    </div>
+  </aside>
+
+  <!-- Product Detail Modal -->
+  <div id="product-modal" class="cima-modal hidden">
+    <div class="cima-modal-card cima-modal-lg">
+      <button type="button" class="cima-close-btn cima-modal-close" data-close="product-modal">&times;</button>
+      <div id="product-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Account / Auth / Orders Modal -->
+  <div id="account-modal" class="cima-modal hidden">
+    <div class="cima-modal-card">
+      <button type="button" class="cima-close-btn cima-modal-close" data-close="account-modal">&times;</button>
+      <div id="account-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Checkout Modal -->
+  <div id="checkout-modal" class="cima-modal hidden">
+    <div class="cima-modal-card cima-modal-lg">
+      <button type="button" class="cima-close-btn cima-modal-close" data-close="checkout-modal">&times;</button>
+      <div id="checkout-modal-body"></div>
+    </div>
+  </div>
+
+  <div id="cima-toast" class="cima-toast hidden"></div>
+</div>
+
+<script src="/assets/cima_ve/js/tienda.js?v=1"></script>
+{% endblock %}
