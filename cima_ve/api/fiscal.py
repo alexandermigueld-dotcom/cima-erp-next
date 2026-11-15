@@ -46,6 +46,9 @@ def stamp_sales_invoice(sales_invoice_name: str) -> dict:
         )
         for row in doc.items
     ]
+    seller_user = getattr(doc, "ve_vendedor_usuario", None) or getattr(doc, "owner", None) or frappe.session.user
+    seller_name = getattr(doc, "ve_vendedor_nombre", None) or frappe.utils.get_fullname(seller_user) or seller_user
+
     payload = FiscalInvoicePayload(
         invoice_name=doc.name,
         customer_name=doc.customer_name or doc.customer,
@@ -55,6 +58,8 @@ def stamp_sales_invoice(sales_invoice_name: str) -> dict:
         apply_igtf=bool(getattr(doc, "ve_igtf_aplicado", 0)),
         iva_rate=iva_rate,
         igtf_rate=igtf_rate,
+        seller_user=str(seller_user or ""),
+        seller_name=str(seller_name or ""),
     )
     result = client.issue_digital_invoice(payload)
 
@@ -64,4 +69,8 @@ def stamp_sales_invoice(sales_invoice_name: str) -> dict:
     doc.db_set("ve_fiscal_pdf_url", result.pdf_url)
     doc.db_set("ve_fiscal_hash", result.qr_hash)
     doc.db_set("ve_igtf_amount", result.tax_breakdown.igtf_amount)
+    if not getattr(doc, "ve_vendedor_usuario", None):
+        doc.db_set("ve_vendedor_usuario", seller_user)
+    if not getattr(doc, "ve_vendedor_nombre", None):
+        doc.db_set("ve_vendedor_nombre", seller_name)
     return result.to_dict()

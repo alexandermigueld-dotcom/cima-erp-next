@@ -1,0 +1,266 @@
+.cima-metrics-shell {
+	max-width: 1420px;
+	margin: 0 auto;
+	padding: 12px 6px 32px;
+}
+
+.cima-metrics-hero {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 18px 22px;
+	border-radius: 12px;
+	background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+	color: #fff;
+	margin-bottom: 16px;
+}
+
+.cima-metrics-hero h2 {
+	margin: 0;
+	font-size: 21px;
+	font-weight: 700;
+	color: #fff;
+}
+
+.cima-metrics-hero p {
+	margin: 4px 0 0;
+	font-size: 13px;
+	color: #cbd5e1;
+}
+
+.cima-metrics-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.cima-metrics-btn-ghost {
+	background: rgba(255, 255, 255, 0.14);
+	color: #fff;
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	padding: 8px 14px;
+	border-radius: 8px;
+	font-weight: 600;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.cima-metrics-btn-ghost:hover {
+	background: rgba(255, 255, 255, 0.24);
+}
+
+.cima-metrics-filters {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	padding: 14px 16px;
+	margin-bottom: 16px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: flex-end;
+}
+
+.cima-filter-group {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 140px;
+}
+
+.cima-filter-group label {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: #64748b;
+	margin: 0;
+}
+
+.cima-preset-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.cima-preset-btn {
+	border: 1px solid #cbd5e1;
+	background: #f8fafc;
+	color: #334155;
+	border-radius: 999px;
+	padding: 5px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.cima-preset-btn.active {
+	background: #1d4ed8;
+	border-color: #1d4ed8;
+	color: #fff;
+}
+
+.cima-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+	gap: 12px;
+	margin-bottom: 18px;
+}
+
+.cima-kpi-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	padding: 14px 16px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.cima-kpi-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #64748b;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.cima-kpi-value {
+	font-size: 24px;
+	font-weight: 800;
+	color: #0f172a;
+	margin: 4px 0 2px;
+}
+
+.cima-kpi-sub {
+	font-size: 12px;
+	color: #475569;
+}
+
+.cima-metrics-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	padding: 16px;
+	margin-bottom: 16px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.cima-metrics-card-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.cima-metrics-card-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: #0f172a;
+}
+
+.cima-metrics-grid-2 {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 16px;
+}
+
+@media (max-width: 992px) {
+	.cima-metrics-grid-2 {
+		grid-template-columns: 1fr;
+	}
+}
+
+.cima-share-bar-wrap {
+	width: 110px;
+	height: 8px;
+	background: #e2e8f0;
+	border-radius: 999px;
+	overflow: hidden;
+	display: inline-block;
+	vertical-align: middle;
+	margin-right: 6px;
+}
+
+.cima-share-bar-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #2563eb, #10b981);
+	border-radius: 999px;
+}
+
+.cima-user-row {
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+
+.cima-user-row:hover {
+	background: #f1f5f9 !important;
+}
+
+.cima-user-row.active-seller {
+	background: #eff6ff !important;
+}
+
+.cima-trend-bars {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	height: 160px;
+	padding: 12px 6px 4px;
+	overflow-x: auto;
+	border-bottom: 1px solid #e2e8f0;
+}
+
+.cima-trend-col {
+	flex: 1;
+	min-width: 34px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+	height: 100%;
+}
+
+.cima-trend-bar {
+	width: 100%;
+	max-width: 32px;
+	background: linear-gradient(180deg, #2563eb 0%, #60a5fa 100%);
+	border-radius: 6px 6px 0 0;
+	min-height: 4px;
+	transition: opacity 0.15s ease;
+}
+
+.cima-trend-bar:hover {
+	opacity: 0.82;
+}
+
+.cima-trend-date {
+	font-size: 10px;
+	color: #64748b;
+	margin-top: 6px;
+	white-space: nowrap;
+}
+
+.cima-badge-pill {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.cima-badge-ok {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.cima-badge-warn {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+.cima-badge-info {
+	background: #dbeafe;
+	color: #1e40af;
+}

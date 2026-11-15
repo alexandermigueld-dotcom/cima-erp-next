@@ -33,6 +33,8 @@ class TestFiscalSimulator(unittest.TestCase):
             currency="USD",
             items=[FiscalInvoiceItem("P1", "Inversor", qty=2, unit_price=50.0)],
             apply_igtf=False,
+            seller_user="vendedor1@cima.ve",
+            seller_name="María Pérez",
         )
         result = self.client.issue_digital_invoice(payload, sequence_seed=42)
         self.assertTrue(result.is_simulated)
@@ -42,6 +44,8 @@ class TestFiscalSimulator(unittest.TestCase):
         self.assertEqual(result.tax_breakdown.iva_amount, 16.0)
         self.assertEqual(result.tax_breakdown.grand_total, 116.0)
         self.assertTrue(result.qr_hash.startswith("SENIAT-SIM-"))
+        self.assertEqual(result.raw_response["seller"]["user"], "vendedor1@cima.ve")
+        self.assertEqual(result.raw_response["seller"]["name"], "María Pérez")
 
     def test_missing_rif_raises_value_error(self) -> None:
         payload = FiscalInvoicePayload(

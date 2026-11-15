@@ -1,0 +1,34 @@
+{
+ "content": null,
+ "creation": "2026-11-15 19:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "chart",
+ "idx": 0,
+ "modified": "2026-11-15 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cima VE",
+ "name": "metricas-ventas",
+ "owner": "Administrator",
+ "page_name": "metricas-ventas",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Métricas de Ventas por Vendedor"
+}

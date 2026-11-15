@@ -46,6 +46,8 @@ class FiscalInvoicePayload:
     apply_igtf: bool = False
     iva_rate: float = 16.0
     igtf_rate: float = 3.0
+    seller_user: str = ""
+    seller_name: str = ""
 
 
 @dataclass(slots=True)
@@ -145,6 +147,10 @@ class FiscalPrinterClient:
                 "control_number": control_number,
                 "fiscal_invoice_number": fiscal_number,
                 "customer_rif_cedula": payload.customer_rif_cedula,
+                "seller": {
+                    "user": payload.seller_user,
+                    "name": payload.seller_name,
+                },
                 "taxes": taxes.to_dict(),
             }
             return FiscalStampResult(
@@ -165,6 +171,10 @@ class FiscalPrinterClient:
             "customer": {
                 "name": payload.customer_name,
                 "tax_id": payload.customer_rif_cedula,
+            },
+            "seller": {
+                "user": payload.seller_user,
+                "name": payload.seller_name,
             },
             "currency": payload.currency,
             "items": [

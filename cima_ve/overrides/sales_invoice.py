@@ -4,7 +4,18 @@ from cima_ve.services.fiscal_printer import FiscalInvoiceItem, calculate_venezue
 
 
 def validate_venezuela_fiscal(doc, method=None) -> None:
-    """Calcula el monto referencial de IGTF (3%) antes de guardar la factura."""
+    """Asigna el vendedor responsable y calcula el monto referencial de IGTF (3%)."""
+    try:
+        import frappe
+
+        seller_user = getattr(doc, "ve_vendedor_usuario", None) or getattr(doc, "owner", None) or frappe.session.user
+        if seller_user and not getattr(doc, "ve_vendedor_usuario", None):
+            doc.ve_vendedor_usuario = seller_user
+        if seller_user and not getattr(doc, "ve_vendedor_nombre", None):
+            doc.ve_vendedor_nombre = frappe.utils.get_fullname(seller_user) or seller_user
+    except Exception:
+        pass
+
     if not getattr(doc, "ve_igtf_aplicado", 0) or not getattr(doc, "items", None):
         doc.ve_igtf_amount = 0.0
         return

@@ -111,6 +111,29 @@
  {
   "doctype": "Custom Field",
   "dt": "Sales Invoice",
+  "fieldname": "ve_vendedor_usuario",
+  "fieldtype": "Link",
+  "insert_after": "ve_igtf_amount",
+  "label": "Usuario Vendedor",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_vendedor_usuario",
+  "options": "User",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_vendedor_nombre",
+  "fieldtype": "Data",
+  "insert_after": "ve_vendedor_usuario",
+  "label": "Nombre del Vendedor",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_vendedor_nombre",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
   "fieldname": "cashea_section",
   "fieldtype": "Section Break",
   "insert_after": "ve_igtf_amount",

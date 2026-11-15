@@ -42,18 +42,34 @@ def get_seller_bootstrap() -> dict:
         price_lists[0]["name"] if price_lists else "Standard Selling",
     )
 
+    current_user = frappe.session.user
+    current_user_fullname = frappe.utils.get_fullname(current_user) or current_user
+
     sales_persons = frappe.get_all(
         "Sales Person",
         filters={"enabled": 1, "is_group": 0},
-        fields=["name"],
+        fields=["name", "employee"],
         order_by="name asc",
         limit_page_length=50,
     )
     sales_person_names = [sp["name"] for sp in sales_persons]
-    default_sales_person = next(
-        (name for name in sales_person_names if "tienda" in name.lower() or "mostrador" in name.lower()),
-        sales_person_names[0] if sales_person_names else "",
-    )
+    matched_employee = frappe.db.get_value("Employee", {"user_id": current_user}, "name") if current_user else None
+    default_sales_person = ""
+    if matched_employee:
+        default_sales_person = next(
+            (sp["name"] for sp in sales_persons if sp.get("employee") == matched_employee),
+            "",
+        )
+    if not default_sales_person and current_user_fullname:
+        default_sales_person = next(
+            (name for name in sales_person_names if name.strip().lower() == current_user_fullname.strip().lower()),
+            "",
+        )
+    if not default_sales_person:
+        default_sales_person = next(
+            (name for name in sales_person_names if "tienda" in name.lower() or "mostrador" in name.lower()),
+            sales_person_names[0] if sales_person_names else "",
+        )
 
     sales_channels: list[str] = []
     si_meta = frappe.get_meta("Sales Invoice")
@@ -67,6 +83,8 @@ def get_seller_bootstrap() -> dict:
 
     return {
         "company": default_company,
+        "current_user": current_user,
+        "current_user_fullname": current_user_fullname,
         "default_price_list": preferred_pl,
         "price_lists": price_lists,
         "warehouses": warehouses,
@@ -428,6 +446,9 @@ def create_quick_invoice(
             item_dict["warehouse"] = warehouse
         invoice_items.append(item_dict)
 
+    seller_user = frappe.session.user
+    seller_name = frappe.utils.get_fullname(seller_user) or seller_user
+
     doc = frappe.get_doc(
         {
             "doctype": "Sales Invoice",
@@ -437,7 +458,9 @@ def create_quick_invoice(
             "update_stock": 1 if warehouse else 0,
             "ignore_pricing_rule": 0,
             "ve_igtf_aplicado": 1 if apply_igtf_flag else 0,
-            "remarks": f"Factura rápida vendedor | Método: {payment_method}",
+            "ve_vendedor_usuario": seller_user,
+            "ve_vendedor_nombre": seller_name,
+            "remarks": f"Factura rápida vendedor ({seller_name}) | Método: {payment_method}",
             "items": invoice_items,
         }
     )
@@ -472,6 +495,10 @@ def create_quick_invoice(
         "status": doc.status,
         "currency": doc.currency,
         "grand_total": float(doc.grand_total or summary.grand_total),
+        "seller": {
+            "user": getattr(doc, "ve_vendedor_usuario", None) or seller_user,
+            "fullname": getattr(doc, "ve_vendedor_nombre", None) or seller_name,
+        },
         "tax_summary": summary.to_dict(),
         "fiscal": {
             "control_number": getattr(doc, "ve_numero_control", None),

@@ -58,6 +58,9 @@ class CimaSellerPortal {
 						<button type="button" class="cima-btn-inventory" data-action="tab-inventory">
 							Ver Inventario y Precios
 						</button>
+						<button type="button" class="cima-btn-inventory" data-action="open-metrics">
+							Métricas de Ventas
+						</button>
 					</div>
 				</div>
 
@@ -103,6 +106,7 @@ class CimaSellerPortal {
 									Limpiar
 								</button>
 							</div>
+							<div id="cima-logged-seller-badge" class="text-muted small mb-2"></div>
 
 							<div id="cima-cart-items">
 								<div class="text-muted text-center p-4">
@@ -202,6 +206,10 @@ class CimaSellerPortal {
 		root.on("click", "[data-action='tab-inventory']", () => {
 			this.switchTab("inventario");
 			this.loadInventory(root.find("#cima-inv-search").val() || "");
+		});
+
+		root.on("click", "[data-action='open-metrics']", () => {
+			frappe.set_route("metricas-ventas");
 		});
 
 		root.on("click", "[data-action='clear-cart']", () => {
@@ -391,6 +399,12 @@ class CimaSellerPortal {
 				this.wrapper.find("#cima-warehouse, #cima-inv-warehouse").html(whOptions).val(this.state.warehouse);
 				this.wrapper.find("#cima-sales-channel").html(chOptions).val(this.state.salesChannel);
 				this.wrapper.find("#cima-sales-person").html(spOptions).val(this.state.salesPerson);
+
+				const sellerFull = r.message.current_user_fullname || frappe.session.user_fullname || frappe.session.user;
+				const sellerUser = r.message.current_user || frappe.session.user;
+				this.wrapper.find("#cima-logged-seller-badge").html(
+					`Responsable: <strong>${frappe.utils.escape_html(sellerFull)}</strong> (${frappe.utils.escape_html(sellerUser)})`
+				);
 
 				this.loadCustomers("");
 				this.loadInventory("");
@@ -756,10 +770,15 @@ class CimaSellerPortal {
 		}
 		const fiscal = res.fiscal || {};
 		const cashea = res.cashea || null;
+		const seller = res.seller || {};
+		const sellerLabel = seller.fullname
+			? `${seller.fullname} (${seller.user || ""})`
+			: (seller.user || frappe.session.user || "");
 		box.html(`
 			<div class="cima-result-banner">
 				<div><strong>Factura emitida:</strong> ${frappe.utils.escape_html(res.invoice_name)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
 				<div class="small mt-1">
+					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)} ·
 					<strong>N° Control Fiscal:</strong> ${frappe.utils.escape_html(fiscal.control_number || "Pendiente")} ·
 					<strong>Estado:</strong> ${frappe.utils.escape_html(fiscal.status || "-")}
 					${fiscal.pdf_url ? ` · <a href="${frappe.utils.escape_html(fiscal.pdf_url)}" target="_blank">Ver PDF Fiscal</a>` : ""}
