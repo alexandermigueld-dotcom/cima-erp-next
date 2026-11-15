@@ -719,6 +719,9 @@ def place_storefront_order(
     if not so.items:
         frappe.throw("No hay productos válidos en el pedido.")
 
+    from cima_ve.api.seller_pos import _apply_required_sales_metadata
+
+    _apply_required_sales_metadata(so, sales_channel="Detal")
     so.insert(ignore_permissions=True)
     so.submit()
 
@@ -746,6 +749,7 @@ def place_storefront_order(
             from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 
             si = make_sales_invoice(so.name, ignore_permissions=True)
+            _apply_required_sales_metadata(si, sales_channel="Detal")
             si.insert(ignore_permissions=True)
             si.submit()
             result["sales_invoice"] = si.name

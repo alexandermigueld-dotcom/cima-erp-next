@@ -42,12 +42,39 @@ def get_seller_bootstrap() -> dict:
         price_lists[0]["name"] if price_lists else "Standard Selling",
     )
 
+    sales_persons = frappe.get_all(
+        "Sales Person",
+        filters={"enabled": 1, "is_group": 0},
+        fields=["name"],
+        order_by="name asc",
+        limit_page_length=50,
+    )
+    sales_person_names = [sp["name"] for sp in sales_persons]
+    default_sales_person = next(
+        (name for name in sales_person_names if "tienda" in name.lower() or "mostrador" in name.lower()),
+        sales_person_names[0] if sales_person_names else "",
+    )
+
+    sales_channels: list[str] = []
+    si_meta = frappe.get_meta("Sales Invoice")
+    if si_meta.has_field("canal_venta"):
+        raw_opts = si_meta.get_field("canal_venta").options or ""
+        sales_channels = [opt.strip() for opt in raw_opts.splitlines() if opt.strip()]
+    default_sales_channel = next(
+        (ch for ch in sales_channels if ch.lower() == "detal"),
+        sales_channels[0] if sales_channels else "",
+    )
+
     return {
         "company": default_company,
         "default_price_list": preferred_pl,
         "price_lists": price_lists,
         "warehouses": warehouses,
         "default_warehouse": warehouses[0]["name"] if warehouses else "",
+        "sales_persons": sales_person_names,
+        "default_sales_person": default_sales_person,
+        "sales_channels": sales_channels,
+        "default_sales_channel": default_sales_channel,
     }
 
 
@@ -207,6 +234,51 @@ def _get_fiscal_rates() -> tuple[float, float]:
         return 16.0, 3.0
 
 
+def _apply_required_sales_metadata(doc, sales_channel: str = "", sales_person: str = "") -> None:
+    """Completa campos personalizados/obligatorios (canal_venta, tipo_pedido, sales_team) si existen."""
+    import frappe
+
+    meta = frappe.get_meta(doc.doctype)
+
+    if meta.has_field("canal_venta") and not doc.get("canal_venta"):
+        raw_opts = meta.get_field("canal_venta").options or ""
+        options = [opt.strip() for opt in raw_opts.splitlines() if opt.strip()]
+        chosen = (sales_channel or "").strip()
+        if options and chosen not in options:
+            chosen = next((o for o in options if o.lower() == "detal"), options[0])
+        if chosen:
+            doc.set("canal_venta", chosen)
+
+    if meta.has_field("tipo_pedido") and not doc.get("tipo_pedido"):
+        raw_opts = meta.get_field("tipo_pedido").options or ""
+        options = [opt.strip() for opt in raw_opts.splitlines() if opt.strip()]
+        chosen_type = next((o for o in options if o.lower() == "venta"), options[0] if options else "Venta")
+        doc.set("tipo_pedido", chosen_type)
+
+    if meta.has_field("sales_team") and not doc.get("sales_team"):
+        chosen_sp = (sales_person or "").strip()
+        if chosen_sp and not frappe.db.exists("Sales Person", chosen_sp):
+            chosen_sp = ""
+        if not chosen_sp:
+            sp_rows = frappe.get_all(
+                "Sales Person",
+                filters={"enabled": 1, "is_group": 0},
+                fields=["name"],
+                order_by="name asc",
+                limit_page_length=50,
+            )
+            sp_names = [r["name"] for r in sp_rows]
+            chosen_sp = next(
+                (n for n in sp_names if "tienda" in n.lower() or "mostrador" in n.lower()),
+                sp_names[0] if sp_names else "",
+            )
+        if not chosen_sp:
+            any_sp = frappe.get_all("Sales Person", fields=["name"], limit_page_length=1)
+            chosen_sp = any_sp[0]["name"] if any_sp else ""
+        if chosen_sp:
+            doc.append("sales_team", {"sales_person": chosen_sp, "allocated_percentage": 100})
+
+
 @whitelist()
 def preview_cart_pricing(
     items: str | list[dict],
@@ -331,6 +403,8 @@ def create_quick_invoice(
     payment_method: str = "Contado USD",
     apply_igtf: int | bool = False,
     submit: int | bool = True,
+    sales_channel: str = "Detal",
+    sales_person: str = "",
 ) -> dict:
     """Crea y opcionalmente confirma una Sales Invoice desde la interfaz de vendedor."""
     import frappe
@@ -367,6 +441,7 @@ def create_quick_invoice(
             "items": invoice_items,
         }
     )
+    _apply_required_sales_metadata(doc, sales_channel=sales_channel, sales_person=sales_person)
     doc.insert()
     if submit_flag:
         doc.submit()

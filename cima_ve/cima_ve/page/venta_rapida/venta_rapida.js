@@ -17,11 +17,17 @@ class CimaSellerPortal {
 			bootstrap: {
 				price_lists: [],
 				warehouses: [],
+				sales_channels: [],
+				sales_persons: [],
 				default_price_list: "",
 				default_warehouse: "",
+				default_sales_channel: "Detal",
+				default_sales_person: "",
 			},
 			priceList: "",
 			warehouse: "",
+			salesChannel: "Detal",
+			salesPerson: "",
 			selectedCustomer: null,
 			cart: [],
 			paymentMethod: "Contado USD",
@@ -101,6 +107,17 @@ class CimaSellerPortal {
 							<div id="cima-cart-items">
 								<div class="text-muted text-center p-4">
 									Agrega productos desde la izquierda para comenzar.
+								</div>
+							</div>
+
+							<div class="cima-search-row mt-3">
+								<div class="form-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
+									<label class="control-label">Canal de Venta</label>
+									<select id="cima-sales-channel" class="form-control"></select>
+								</div>
+								<div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
+									<label class="control-label">Vendedor</label>
+									<select id="cima-sales-person" class="form-control"></select>
 								</div>
 							</div>
 
@@ -254,6 +271,14 @@ class CimaSellerPortal {
 			this.refreshCartPricing();
 		});
 
+		root.on("change", "#cima-sales-channel", (e) => {
+			this.state.salesChannel = $(e.target).val();
+		});
+
+		root.on("change", "#cima-sales-person", (e) => {
+			this.state.salesPerson = $(e.target).val();
+		});
+
 		root.on("change", "#cima-payment-method", (e) => {
 			this.state.paymentMethod = $(e.target).val();
 			const isUsdCash = this.state.paymentMethod === "Contado USD";
@@ -280,6 +305,17 @@ class CimaSellerPortal {
 			const code = $(e.currentTarget).attr("data-item-code");
 			const delta = parseFloat($(e.currentTarget).attr("data-qty-delta"));
 			this.updateCartQty(code, delta);
+		});
+
+		root.on("focus", "[data-qty-input]", (e) => {
+			e.target.select();
+		});
+
+		root.on("keydown", "[data-qty-input]", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				$(e.target).blur();
+			}
 		});
 
 		root.on("input", "[data-qty-input]", (e) => {
@@ -328,6 +364,8 @@ class CimaSellerPortal {
 				this.state.bootstrap = r.message;
 				this.state.priceList = r.message.default_price_list || "";
 				this.state.warehouse = r.message.default_warehouse || "";
+				this.state.salesChannel = r.message.default_sales_channel || "Detal";
+				this.state.salesPerson = r.message.default_sales_person || "";
 
 				const plOptions = (r.message.price_lists || [])
 					.map((pl) => `<option value="${frappe.utils.escape_html(pl.name)}">${frappe.utils.escape_html(pl.name)} (${pl.currency})</option>`)
@@ -337,9 +375,22 @@ class CimaSellerPortal {
 					(r.message.warehouses || [])
 						.map((w) => `<option value="${frappe.utils.escape_html(w.name)}">${frappe.utils.escape_html(w.warehouse_name || w.name)}</option>`)
 						.join("");
+				const chList = (r.message.sales_channels && r.message.sales_channels.length)
+					? r.message.sales_channels
+					: ["Detal", "Mayor", "Meta Ads"];
+				const chOptions = chList
+					.map((ch) => `<option value="${frappe.utils.escape_html(ch)}">${frappe.utils.escape_html(ch)}</option>`)
+					.join("");
+				const spOptions =
+					`<option value="">-- Automático --</option>` +
+					(r.message.sales_persons || [])
+						.map((sp) => `<option value="${frappe.utils.escape_html(sp)}">${frappe.utils.escape_html(sp)}</option>`)
+						.join("");
 
 				this.wrapper.find("#cima-price-list, #cima-inv-price-list").html(plOptions).val(this.state.priceList);
 				this.wrapper.find("#cima-warehouse, #cima-inv-warehouse").html(whOptions).val(this.state.warehouse);
+				this.wrapper.find("#cima-sales-channel").html(chOptions).val(this.state.salesChannel);
+				this.wrapper.find("#cima-sales-person").html(spOptions).val(this.state.salesPerson);
 
 				this.loadCustomers("");
 				this.loadInventory("");
@@ -674,6 +725,8 @@ class CimaSellerPortal {
 				items: JSON.stringify(this.state.cart),
 				price_list: this.state.priceList,
 				warehouse: this.state.warehouse,
+				sales_channel: this.state.salesChannel,
+				sales_person: this.state.salesPerson,
 				payment_method: this.state.paymentMethod,
 				apply_igtf: this.state.applyIgtf ? 1 : 0,
 				submit: 1,

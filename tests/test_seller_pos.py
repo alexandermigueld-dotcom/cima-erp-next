@@ -88,6 +88,14 @@ class SellerPosServiceTests(unittest.TestCase):
         js_text = page_js.read_text(encoding="utf-8")
         self.assertIn("data-qty-input", js_text)
         self.assertIn("preview_cart_pricing", js_text)
+        self.assertIn("cima-sales-channel", js_text)
+        self.assertIn("cima-sales-person", js_text)
+        self.assertIn("e.target.select()", js_text)
+
+        seller_pos_py = (root / "cima_ve" / "api" / "seller_pos.py").read_text(encoding="utf-8")
+        storefront_py = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        self.assertIn("_apply_required_sales_metadata", seller_pos_py)
+        self.assertIn("_apply_required_sales_metadata", storefront_py)
 
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
         self.assertEqual(len(ws_data), 1)

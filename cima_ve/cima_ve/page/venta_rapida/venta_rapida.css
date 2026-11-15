@@ -215,8 +215,10 @@
 }
 
 .cima-qty-input {
-  width: 68px;
-  height: 26px;
+  width: 78px;
+  min-width: 78px;
+  flex-shrink: 0;
+  height: 28px;
   padding: 2px 6px;
   text-align: center;
   font-weight: 600;
