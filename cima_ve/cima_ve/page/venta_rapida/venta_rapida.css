@@ -1,0 +1,215 @@
+.cima-seller-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 16px 12px 40px;
+}
+
+.cima-hero-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #ffffff;
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
+}
+
+.cima-hero-title h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.cima-hero-title p {
+  margin: 0;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.cima-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.cima-btn-start-invoice {
+  background: #16a34a;
+  color: #ffffff !important;
+  border: none;
+  border-radius: 10px;
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.35);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.cima-btn-start-invoice:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+}
+
+.cima-btn-inventory {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cima-btn-inventory:hover,
+.cima-btn-inventory.active {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.cima-grid-invoice {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .cima-grid-invoice {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cima-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.cima-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cima-search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.cima-search-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.cima-product-list {
+  max-height: 410px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+}
+
+.cima-product-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+}
+
+.cima-product-row:last-child {
+  border-bottom: none;
+}
+
+.cima-product-row:hover {
+  background: var(--bg-light-gray, #f8fafc);
+}
+
+.cima-stock-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cima-stock-ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.cima-stock-low {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.cima-stock-empty {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.cima-summary-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.cima-summary-line {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.cima-summary-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: 700;
+  padding-top: 8px;
+  border-top: 1px solid #cbd5e1;
+  margin-top: 8px;
+}
+
+.cima-btn-emit {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 10px;
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+}
+
+.cima-btn-emit:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.cima-result-banner {
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}

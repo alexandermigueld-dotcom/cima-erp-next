@@ -1,0 +1,155 @@
+[
+ {
+  "doctype": "Custom Field",
+  "dt": "Customer",
+  "fieldname": "ve_rif_cedula",
+  "fieldtype": "Data",
+  "insert_after": "tax_id",
+  "label": "RIF / Cédula",
+  "module": "Cima VE",
+  "name": "Customer-ve_rif_cedula"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Customer",
+  "fieldname": "ve_taxpayer_type",
+  "fieldtype": "Select",
+  "insert_after": "ve_rif_cedula",
+  "label": "Tipo de Contribuyente (SENIAT)",
+  "module": "Cima VE",
+  "name": "Customer-ve_taxpayer_type",
+  "options": "Ordinario\nEspecial\nFormal\nNo Contribuyente"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_fiscal_section",
+  "fieldtype": "Section Break",
+  "insert_after": "remarks",
+  "label": "Facturación Fiscal Digital (SENIAT)",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_fiscal_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_numero_control",
+  "fieldtype": "Data",
+  "insert_after": "ve_fiscal_section",
+  "label": "Número de Control Fiscal",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_numero_control",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_numero_factura_fiscal",
+  "fieldtype": "Data",
+  "insert_after": "ve_numero_control",
+  "label": "Número de Factura Fiscal",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_numero_factura_fiscal",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_fiscal_status",
+  "fieldtype": "Select",
+  "insert_after": "ve_numero_factura_fiscal",
+  "label": "Estado Fiscal Digital",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_fiscal_status",
+  "options": "Pendiente\nSimulada\nTimbrada\nError",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_fiscal_pdf_url",
+  "fieldtype": "Data",
+  "insert_after": "ve_fiscal_status",
+  "label": "URL Factura Digital",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_fiscal_pdf_url",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_fiscal_hash",
+  "fieldtype": "Data",
+  "insert_after": "ve_fiscal_pdf_url",
+  "label": "Hash / QR SENIAT",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_fiscal_hash",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_igtf_aplicado",
+  "fieldtype": "Check",
+  "insert_after": "ve_fiscal_hash",
+  "label": "Aplica IGTF (3% Divisas)",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_igtf_aplicado"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_igtf_amount",
+  "fieldtype": "Currency",
+  "insert_after": "ve_igtf_aplicado",
+  "label": "Monto IGTF (3%)",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_igtf_amount",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "cashea_section",
+  "fieldtype": "Section Break",
+  "insert_after": "ve_igtf_amount",
+  "label": "Pago con Cashea",
+  "module": "Cima VE",
+  "name": "Sales Invoice-cashea_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "cashea_order_id",
+  "fieldtype": "Data",
+  "insert_after": "cashea_section",
+  "label": "Cashea Order ID",
+  "module": "Cima VE",
+  "name": "Sales Invoice-cashea_order_id",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "cashea_status",
+  "fieldtype": "Select",
+  "insert_after": "cashea_order_id",
+  "label": "Estado Cashea",
+  "module": "Cima VE",
+  "name": "Sales Invoice-cashea_status",
+  "options": "\nPendiente\nInicial Pagada\nAprobada\nCancelada\nSimulada",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "cashea_down_payment",
+  "fieldtype": "Currency",
+  "insert_after": "cashea_status",
+  "label": "Inicial Pagada (Cashea)",
+  "module": "Cima VE",
+  "name": "Sales Invoice-cashea_down_payment",
+  "read_only": 1
+ }
+]

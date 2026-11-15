@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "creation": "2026-11-15 15:55:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "simulation_mode",
+  "cashea_section",
+  "cashea_enabled",
+  "cashea_api_url",
+  "cashea_api_key",
+  "cashea_webhook_secret",
+  "cashea_bridge_account",
+  "fiscal_section",
+  "fiscal_enabled",
+  "fiscal_provider_name",
+  "fiscal_api_url",
+  "fiscal_api_token",
+  "fiscal_series_prefix",
+  "taxes_section",
+  "iva_rate",
+  "igtf_rate"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "description": "Si está activo, Cashea y la Imprenta Fiscal Digital operan en modo simulador sin llamadas externas.",
+   "fieldname": "simulation_mode",
+   "fieldtype": "Check",
+   "label": "Modo Simulación (Pruebas sin credenciales)"
+  },
+  {
+   "fieldname": "cashea_section",
+   "fieldtype": "Section Break",
+   "label": "Configuración Cashea"
+  },
+  {
+   "default": "1",
+   "fieldname": "cashea_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Cashea"
+  },
+  {
+   "fieldname": "cashea_api_url",
+   "fieldtype": "Data",
+   "label": "Cashea API URL"
+  },
+  {
+   "fieldname": "cashea_api_key",
+   "fieldtype": "Password",
+   "label": "Cashea API Key"
+  },
+  {
+   "fieldname": "cashea_webhook_secret",
+   "fieldtype": "Password",
+   "label": "Cashea Webhook Secret"
+  },
+  {
+   "fieldname": "cashea_bridge_account",
+   "fieldtype": "Link",
+   "label": "Cuenta Puente Cashea",
+   "options": "Account"
+  },
+  {
+   "fieldname": "fiscal_section",
+   "fieldtype": "Section Break",
+   "label": "Imprenta Fiscal Digital (SENIAT)"
+  },
+  {
+   "default": "1",
+   "fieldname": "fiscal_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Timbrado Digital SENIAT"
+  },
+  {
+   "fieldname": "fiscal_provider_name",
+   "fieldtype": "Data",
+   "label": "Proveedor de Imprenta Digital"
+  },
+  {
+   "fieldname": "fiscal_api_url",
+   "fieldtype": "Data",
+   "label": "Imprenta Digital API URL"
+  },
+  {
+   "fieldname": "fiscal_api_token",
+   "fieldtype": "Password",
+   "label": "Imprenta Digital API Token"
+  },
+  {
+   "default": "00",
+   "fieldname": "fiscal_series_prefix",
+   "fieldtype": "Data",
+   "label": "Prefijo de Serie / Control"
+  },
+  {
+   "fieldname": "taxes_section",
+   "fieldtype": "Section Break",
+   "label": "Tasas Fiscales Venezuela"
+  },
+  {
+   "default": "16.0",
+   "fieldname": "iva_rate",
+   "fieldtype": "Float",
+   "label": "Tasa IVA (%)"
+  },
+  {
+   "default": "3.0",
+   "fieldname": "igtf_rate",
+   "fieldtype": "Float",
+   "label": "Tasa IGTF Divisas (%)"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-15 15:55:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cima VE",
+ "name": "Cima VE Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

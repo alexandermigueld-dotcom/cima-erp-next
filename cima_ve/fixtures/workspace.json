@@ -1,0 +1,44 @@
+[
+ {
+  "charts": [],
+  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Portal de Vendedores — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Iniciar Facturación\",\"col\":8}},{\"id\":\"cima-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Inventario y Precios\",\"col\":4}}]",
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 1,
+  "icon": "sell",
+  "is_hidden": 0,
+  "label": "Facturación Cima",
+  "links": [],
+  "module": "Cima VE",
+  "name": "Facturación Cima",
+  "public": 1,
+  "roles": [
+   {
+    "role": "Sales User"
+   },
+   {
+    "role": "Sales Manager"
+   },
+   {
+    "role": "System Manager"
+   }
+  ],
+  "shortcuts": [
+   {
+    "color": "Green",
+    "doc_view": "List",
+    "label": "Iniciar Facturación",
+    "link_to": "venta-rapida",
+    "type": "Page"
+   },
+   {
+    "color": "Blue",
+    "doc_view": "List",
+    "label": "Inventario y Precios",
+    "link_to": "venta-rapida",
+    "type": "Page"
+   }
+  ],
+  "title": "Facturación Cima"
+ }
+]

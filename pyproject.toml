@@ -1,0 +1,11 @@
+[project]
+name = "cima_ve"
+version = "0.1.0"
+description = "Integración de Cashea y Facturación Fiscal Digital SENIAT para ERPNext (CIMA Electronic VE)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
