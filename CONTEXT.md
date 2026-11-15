@@ -71,10 +71,11 @@ Local Python virtual environment (`.venv`, Python 3.14) is managed with `uv`:
 - **`cima_ve/cima_ve/doctype/cima_ve_settings/`**: Settings DocType with `simulation_mode`, Cashea API config, and Fiscal Printer API config.
 - **`cima_ve/services/cashea_client.py` & `cima_ve/api/cashea.py`**: Cashea checkout creation (40% down payment + installments) and HMAC-SHA256 webhook verification (simulation + real HTTP client).
 - **`cima_ve/services/fiscal_printer.py` & `cima_ve/api/fiscal.py`**: Venezuelan tax breakdown (IVA 16%, exempt, IGTF 3%) and simulated/REST Imprenta Digital stamping (`on_submit` hook in `cima_ve/overrides/sales_invoice.py`).
-- **`cima_ve/services/seller_pos_service.py` & `cima_ve/api/seller_pos.py`**: Backend endpoints for the simplified seller POS (`get_seller_bootstrap`, `search_inventory_and_prices`, `search_customers`, `quick_create_customer`, `create_quick_invoice`).
-- **`cima_ve/cima_ve/page/venta_rapida/`**: Native Frappe Page (`venta-rapida.json`, `.js`, `.css`) with **+ INICIAR FACTURACIÓN** flow and searchable **Inventario y Precios** tab.
+- **`cima_ve/services/seller_pos_service.py` & `cima_ve/api/seller_pos.py`**: Backend endpoints for the simplified seller POS (`get_seller_bootstrap`, `preview_cart_pricing`, `search_inventory_and_prices`, `search_customers`, `quick_create_customer`, `create_quick_invoice`), with automatic `canal_venta`, `tipo_pedido`, and `sales_team` metadata handling.
+- **`cima_ve/services/storefront_service.py` & `cima_ve/api/storefront.py` & `cima_ve/www/tienda.html`**: Public Amazon-style storefront (`/tienda`) with live `Bin` stock, `Pricing Rule` volume discounts, Google/email registration, optional RIF/fiscal profile, placeholder SVG, and 6 payment methods (Cashea, Google Pay/Cards, Pago Móvil, Zelle, Binance Pay, Transferencia).
+- **`cima_ve/cima_ve/page/venta_rapida/`**: Native Frappe Page (`venta-rapida.json`, `.js`, `.css`) with **+ INICIAR FACTURACIÓN** flow, direct manual quantity input, `Canal de Venta`/`Vendedor` selectors, and searchable **Inventario y Precios** tab.
 - **`cima_ve/fixtures/workspace.json`**: `Facturación Cima` workspace for sellers (`Sales User`).
-- **`tests/`**: 11 unit tests (`test_cashea_simulator.py`, `test_fiscal_simulator.py`, `test_seller_pos.py`) — all passing.
+- **`tests/`**: 18 unit tests (`test_cashea_simulator.py`, `test_fiscal_simulator.py`, `test_seller_pos.py`, `test_storefront.py`) — all passing.
 
 ---
 
@@ -82,9 +83,8 @@ Local Python virtual environment (`.venv`, Python 3.14) is managed with `uv`:
 
 1. **Completed:**
    - Committed and pushed `cima_ve` to `https://github.com/josephnowak/cima-erp-next` (`main`).
-   - Migrated `cimaelectronicve.v.frappe.cloud` to Private Bench `bench-52215` (`bench-52215-000002-f94v`).
-   - Deployed and installed `cima_ve` (`0.1.0`) on `cimaelectronicve.v.frappe.cloud`.
-   - Verified `Cima VE Settings` (`simulation_mode=1`), `venta-rapida` page, `Facturación Cima` workspace, `get_seller_bootstrap`, and `search_inventory_and_prices` live.
+   - Migrated `cimaelectronicve.v.frappe.cloud` to Private Bench `bench-52215` and installed `cima_ve` (`0.1.0`).
+   - Deployed `/tienda` storefront, live `Pricing Rule` discount previews, direct POS quantity input, and required `canal_venta`/`sales_team` handling.
 2. **Remaining Configuration & Credentials:**
    - Verify `venta-rapida` page and `Facturación Cima` workspace visually in the ERPNext UI.
    - Set `CIMA ELECTRONIC VE` `tax_id` (RIF) in ERPNext.
