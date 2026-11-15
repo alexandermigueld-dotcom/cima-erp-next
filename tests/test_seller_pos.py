@@ -53,6 +53,15 @@ class SellerPosServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_quick_invoice_input("Cliente Prueba", [{"item_code": "TV-LG-55", "qty": 0, "rate": 100}])
 
+    def test_validate_quick_invoice_input_allows_omitted_rate_for_pricing_rules(self) -> None:
+        parsed = validate_quick_invoice_input(
+            "Cliente Prueba",
+            [{"item_code": "TV-LG-55", "qty": 100}],
+        )
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].qty, 100.0)
+        self.assertEqual(parsed[0].unit_price, 0.0)
+
     def test_build_seller_invoice_summary_with_igtf(self) -> None:
         summary = build_seller_invoice_summary(
             [
@@ -69,11 +78,16 @@ class SellerPosServiceTests(unittest.TestCase):
     def test_frappe_page_and_workspace_json_valid(self) -> None:
         root = pathlib.Path(__file__).resolve().parent.parent
         page_json = root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.json"
+        page_js = root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js"
         workspace_json = root / "cima_ve" / "fixtures" / "workspace.json"
 
         page_data = json.loads(page_json.read_text(encoding="utf-8"))
         self.assertEqual(page_data["page_name"], "venta-rapida")
         self.assertEqual(page_data["module"], "Cima VE")
+
+        js_text = page_js.read_text(encoding="utf-8")
+        self.assertIn("data-qty-input", js_text)
+        self.assertIn("preview_cart_pricing", js_text)
 
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
         self.assertEqual(len(ws_data), 1)

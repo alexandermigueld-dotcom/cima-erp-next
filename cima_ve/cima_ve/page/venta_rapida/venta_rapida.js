@@ -29,6 +29,8 @@ class CimaSellerPortal {
 			inventoryItems: [],
 			lastInvoiceResult: null,
 		};
+		this._pricingSeq = 0;
+		this._pricingTimer = null;
 
 		this.renderShell();
 		this.bindEvents();
@@ -186,6 +188,8 @@ class CimaSellerPortal {
 		});
 
 		root.on("click", "[data-action='clear-cart']", () => {
+			clearTimeout(this._pricingTimer);
+			this._pricingSeq += 1;
 			this.state.cart = [];
 			this.state.lastInvoiceResult = null;
 			this.renderResultBanner();
@@ -223,6 +227,7 @@ class CimaSellerPortal {
 		root.on("change", "#cima-customer-select", (e) => {
 			this.state.selectedCustomer = $(e.target).val() || null;
 			this.renderCart();
+			this.refreshCartPricing();
 		});
 
 		root.on("change", "#cima-price-list, #cima-inv-price-list", (e) => {
@@ -234,6 +239,7 @@ class CimaSellerPortal {
 					? root.find("#cima-invoice-item-search").val()
 					: root.find("#cima-inv-search").val()
 			);
+			this.refreshCartPricing();
 		});
 
 		root.on("change", "#cima-warehouse, #cima-inv-warehouse", (e) => {
@@ -245,6 +251,7 @@ class CimaSellerPortal {
 					? root.find("#cima-invoice-item-search").val()
 					: root.find("#cima-inv-search").val()
 			);
+			this.refreshCartPricing();
 		});
 
 		root.on("change", "#cima-payment-method", (e) => {
@@ -275,10 +282,29 @@ class CimaSellerPortal {
 			this.updateCartQty(code, delta);
 		});
 
+		root.on("input", "[data-qty-input]", (e) => {
+			const code = $(e.currentTarget).attr("data-qty-input");
+			const val = parseFloat($(e.currentTarget).val());
+			if (!isNaN(val) && val > 0) {
+				this.setCartQty(code, val, { skipRender: true, debouncePricing: true });
+			}
+		});
+
+		root.on("change", "[data-qty-input]", (e) => {
+			const code = $(e.currentTarget).attr("data-qty-input");
+			let val = parseFloat($(e.currentTarget).val());
+			if (isNaN(val) || val <= 0) {
+				val = 1;
+				$(e.currentTarget).val(1);
+			}
+			this.setCartQty(code, val, { skipRender: false, debouncePricing: false });
+		});
+
 		root.on("click", "[data-remove-item]", (e) => {
 			const code = $(e.currentTarget).attr("data-remove-item");
 			this.state.cart = this.state.cart.filter((c) => c.item_code !== code);
 			this.renderCart();
+			this.refreshCartPricing();
 		});
 
 		root.on("click", "#cima-btn-emit", () => {
@@ -435,11 +461,15 @@ class CimaSellerPortal {
 				item_code: item.item_code,
 				item_name: item.item_name,
 				qty: 1,
+				price_list_rate: Number(item.price || 0),
+				discount_percentage: 0,
+				discount_amount: 0,
 				rate: Number(item.price || 0),
 				currency: item.currency || "USD",
 			});
 		}
 		this.renderCart();
+		this.refreshCartPricing();
 	}
 
 	updateCartQty(code, delta) {
@@ -447,9 +477,107 @@ class CimaSellerPortal {
 		if (!row) return;
 		row.qty = Math.max(1, row.qty + delta);
 		this.renderCart();
+		this.refreshCartPricing();
 	}
 
-	renderCart() {
+	setCartQty(code, qty, opts = {}) {
+		const row = this.state.cart.find((c) => c.item_code === code);
+		if (!row) return;
+		row.qty = Math.max(0.01, qty);
+		if (opts.skipRender) {
+			this.updateRowSubtotalDom(row);
+			this.updateSummaryFromCart();
+		} else {
+			this.renderCart();
+		}
+		if (opts.debouncePricing) {
+			clearTimeout(this._pricingTimer);
+			this._pricingTimer = setTimeout(() => {
+				this.refreshCartPricing();
+			}, 280);
+		} else {
+			clearTimeout(this._pricingTimer);
+			this.refreshCartPricing();
+		}
+	}
+
+	formatRowPriceHtml(row) {
+		const rate = Number(row.rate || 0);
+		const listRate = Number(row.price_list_rate || rate);
+		const discPct = Number(row.discount_percentage || 0);
+		const hasDiscount = discPct > 0 || (listRate > 0 && rate < listRate - 0.0001);
+		if (hasDiscount) {
+			const pctText = discPct > 0
+				? `-${discPct.toFixed(discPct % 1 === 0 ? 0 : 1)}%`
+				: `-$${(listRate - rate).toFixed(2)}`;
+			return `<del class="text-muted">${listRate.toFixed(2)}</del> <strong>${rate.toFixed(2)}</strong> c/u <span class="cima-discount-badge">${pctText}</span>`;
+		}
+		return `${rate.toFixed(2)} c/u`;
+	}
+
+	updateRowSubtotalDom(row) {
+		const codeEsc = CSS.escape ? CSS.escape(row.item_code) : row.item_code;
+		const sub = (row.qty * row.rate).toFixed(2);
+		this.wrapper.find(`[data-item-subtotal="${codeEsc}"]`).text(sub);
+		this.wrapper.find(`[data-item-price="${codeEsc}"]`).html(this.formatRowPriceHtml(row));
+	}
+
+	refreshCartPricing() {
+		if (!this.state.cart.length) return;
+		const seq = ++this._pricingSeq;
+		frappe.call({
+			method: "cima_ve.api.seller_pos.preview_cart_pricing",
+			args: {
+				items: JSON.stringify(this.state.cart),
+				customer: this.state.selectedCustomer || "",
+				price_list: this.state.priceList || "",
+				warehouse: this.state.warehouse || "",
+				apply_igtf: this.state.applyIgtf ? 1 : 0,
+			},
+			callback: (r) => {
+				if (seq !== this._pricingSeq || !r.message) return;
+				const priced = r.message.items || [];
+				for (const p of priced) {
+					const local = this.state.cart.find((c) => c.item_code === p.item_code);
+					if (local) {
+						local.price_list_rate = Number(p.price_list_rate ?? p.rate ?? local.rate);
+						local.discount_percentage = Number(p.discount_percentage || 0);
+						local.discount_amount = Number(p.discount_amount || 0);
+						local.rate = Number(p.rate ?? local.rate);
+					}
+				}
+				const isEditingQty = $(document.activeElement).is("[data-qty-input]");
+				if (isEditingQty) {
+					for (const row of this.state.cart) {
+						this.updateRowSubtotalDom(row);
+					}
+					this.updateSummaryFromCart();
+				} else {
+					this.renderCart();
+				}
+			},
+		});
+	}
+
+	updateSummaryFromCart(summaryOverride = null) {
+		if (summaryOverride) {
+			this.renderSummary(
+				Number(summaryOverride.taxable_base || 0),
+				Number(summaryOverride.iva_amount || 0),
+				Number(summaryOverride.igtf_amount || 0),
+				Number(summaryOverride.grand_total || 0)
+			);
+			return;
+		}
+		const base = this.state.cart.reduce((acc, r) => acc + r.qty * r.rate, 0);
+		const iva = base * 0.16;
+		const subtotal = base + iva;
+		const igtf = this.state.applyIgtf ? subtotal * 0.03 : 0;
+		const total = subtotal + igtf;
+		this.renderSummary(base, iva, igtf, total);
+	}
+
+	renderCart(summaryOverride = null) {
 		const container = this.wrapper.find("#cima-cart-items");
 		const emitBtn = this.wrapper.find("#cima-btn-emit");
 
@@ -463,18 +591,19 @@ class CimaSellerPortal {
 		const rowsHtml = this.state.cart
 			.map((row) => {
 				const sub = (row.qty * row.rate).toFixed(2);
+				const codeEsc = frappe.utils.escape_html(row.item_code);
 				return `
 					<div class="cima-product-row">
 						<div>
 							<div><strong>${frappe.utils.escape_html(row.item_name)}</strong></div>
-							<div class="text-muted small">${row.rate.toFixed(2)} c/u</div>
+							<div class="text-muted small" data-item-price="${codeEsc}">${this.formatRowPriceHtml(row)}</div>
 						</div>
 						<div class="d-flex align-items-center" style="gap: 6px;">
-							<button type="button" class="btn btn-xs btn-default" data-item-code="${frappe.utils.escape_html(row.item_code)}" data-qty-delta="-1">-</button>
-							<strong>${row.qty}</strong>
-							<button type="button" class="btn btn-xs btn-default" data-item-code="${frappe.utils.escape_html(row.item_code)}" data-qty-delta="1">+</button>
-							<span class="ml-2 font-weight-bold">${sub}</span>
-							<button type="button" class="btn btn-xs btn-danger" data-remove-item="${frappe.utils.escape_html(row.item_code)}">×</button>
+							<button type="button" class="btn btn-xs btn-default" data-item-code="${codeEsc}" data-qty-delta="-1">-</button>
+							<input type="number" class="form-control input-sm cima-qty-input" data-qty-input="${codeEsc}" value="${row.qty}" min="1" step="1" />
+							<button type="button" class="btn btn-xs btn-default" data-item-code="${codeEsc}" data-qty-delta="1">+</button>
+							<span class="ml-2 font-weight-bold" data-item-subtotal="${codeEsc}">${sub}</span>
+							<button type="button" class="btn btn-xs btn-danger" data-remove-item="${codeEsc}">×</button>
 						</div>
 					</div>
 				`;
@@ -482,12 +611,7 @@ class CimaSellerPortal {
 			.join("");
 		container.html(`<div class="cima-product-list">${rowsHtml}</div>`);
 
-		const base = this.state.cart.reduce((acc, r) => acc + r.qty * r.rate, 0);
-		const iva = base * 0.16;
-		const subtotal = base + iva;
-		const igtf = this.state.applyIgtf ? subtotal * 0.03 : 0;
-		const total = subtotal + igtf;
-		this.renderSummary(base, iva, igtf, total);
+		this.updateSummaryFromCart(summaryOverride);
 
 		emitBtn.prop("disabled", !this.state.selectedCustomer || !this.state.cart.length);
 	}

@@ -19,7 +19,15 @@
   "fiscal_series_prefix",
   "taxes_section",
   "iva_rate",
-  "igtf_rate"
+  "igtf_rate",
+  "storefront_section",
+  "storefront_warehouse",
+  "google_pay_merchant_id",
+  "google_pay_merchant_name",
+  "pago_movil_info",
+  "zelle_info",
+  "binance_pay_info",
+  "bank_transfer_info"
  ],
  "fields": [
   {
@@ -109,6 +117,48 @@
    "fieldname": "igtf_rate",
    "fieldtype": "Float",
    "label": "Tasa IGTF Divisas (%)"
+  },
+  {
+   "fieldname": "storefront_section",
+   "fieldtype": "Section Break",
+   "label": "Tienda Web y Métodos de Pago"
+  },
+  {
+   "fieldname": "storefront_warehouse",
+   "fieldtype": "Link",
+   "label": "Almacén Principal Tienda",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "google_pay_merchant_id",
+   "fieldtype": "Data",
+   "label": "Google Pay Merchant ID (Opcional)"
+  },
+  {
+   "default": "CIMA ELECTRONIC VE",
+   "fieldname": "google_pay_merchant_name",
+   "fieldtype": "Data",
+   "label": "Nombre Comercio Google Pay"
+  },
+  {
+   "fieldname": "pago_movil_info",
+   "fieldtype": "Small Text",
+   "label": "Datos Pago Móvil (Banco, Teléfono, RIF)"
+  },
+  {
+   "fieldname": "zelle_info",
+   "fieldtype": "Small Text",
+   "label": "Datos Zelle (Correo y Titular)"
+  },
+  {
+   "fieldname": "binance_pay_info",
+   "fieldtype": "Small Text",
+   "label": "Datos Binance Pay / USDT"
+  },
+  {
+   "fieldname": "bank_transfer_info",
+   "fieldtype": "Small Text",
+   "label": "Datos Transferencia Bancaria"
   }
  ],
  "issingle": 1,

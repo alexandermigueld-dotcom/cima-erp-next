@@ -179,6 +179,149 @@ def quick_create_customer(
     }
 
 
+def _resolve_company_and_currency(price_list: str = "") -> tuple[str, str]:
+    import frappe
+
+    companies = frappe.get_all(
+        "Company",
+        fields=["name", "default_currency"],
+        order_by="creation asc",
+        limit_page_length=1,
+    )
+    default_company = companies[0]["name"] if companies else ""
+    currency = companies[0]["default_currency"] if companies and companies[0].get("default_currency") else "USD"
+    if price_list:
+        pl_currency = frappe.db.get_value("Price List", price_list, "currency")
+        if pl_currency:
+            currency = pl_currency
+    return default_company, currency
+
+
+def _get_fiscal_rates() -> tuple[float, float]:
+    import frappe
+
+    try:
+        settings = frappe.get_single("Cima VE Settings")
+        return float(settings.iva_rate or 16.0), float(settings.igtf_rate or 3.0)
+    except Exception:
+        return 16.0, 3.0
+
+
+@whitelist()
+def preview_cart_pricing(
+    items: str | list[dict],
+    customer: str = "",
+    price_list: str = "",
+    warehouse: str = "",
+    apply_igtf: int | bool = False,
+) -> dict:
+    """Calcula precios, descuentos por cantidad (Pricing Rules) e impuestos para el carrito."""
+    import frappe
+    from erpnext.stock.get_item_details import get_item_details
+
+    parsed_items = json.loads(items) if isinstance(items, str) else items
+    if not parsed_items:
+        return {
+            "currency": "USD",
+            "items": [],
+            "tax_summary": build_seller_invoice_summary([], apply_igtf=False).to_dict(),
+        }
+
+    validated = validate_quick_invoice_input(customer or "PREVIEW", parsed_items)
+    apply_igtf_flag = bool(int(apply_igtf)) if isinstance(apply_igtf, (int, str)) else bool(apply_igtf)
+    default_company, currency = _resolve_company_and_currency(price_list)
+    iva_rate, igtf_rate = _get_fiscal_rates()
+
+    priced_items: list[dict] = []
+    if customer and frappe.db.exists("Customer", customer):
+        doc_items = []
+        for row in validated:
+            item_dict = {"item_code": row.item_code, "qty": row.qty}
+            if warehouse:
+                item_dict["warehouse"] = warehouse
+            doc_items.append(item_dict)
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "Sales Invoice",
+                "customer": customer,
+                "company": default_company or None,
+                "currency": currency,
+                "selling_price_list": price_list or None,
+                "conversion_rate": 1,
+                "plc_conversion_rate": 1,
+                "ignore_pricing_rule": 0,
+                "items": doc_items,
+            }
+        )
+        doc.run_method("set_missing_values")
+        doc.run_method("calculate_taxes_and_totals")
+
+        for row in doc.items:
+            qty = float(row.qty or 0)
+            rate = float(row.rate or 0)
+            price_list_rate = float(row.price_list_rate or rate)
+            priced_items.append(
+                {
+                    "item_code": row.item_code,
+                    "item_name": row.item_name or row.item_code,
+                    "qty": qty,
+                    "price_list_rate": price_list_rate,
+                    "discount_percentage": float(row.discount_percentage or 0),
+                    "discount_amount": float(row.discount_amount or 0),
+                    "rate": rate,
+                    "amount": round(qty * rate, 2),
+                    "pricing_rules": getattr(row, "pricing_rules", None) or "",
+                }
+            )
+    else:
+        today = frappe.utils.today()
+        for row in validated:
+            details = get_item_details(
+                {
+                    "item_code": row.item_code,
+                    "qty": row.qty,
+                    "price_list": price_list or None,
+                    "selling_price_list": price_list or None,
+                    "warehouse": warehouse or None,
+                    "company": default_company or None,
+                    "doctype": "Sales Invoice",
+                    "currency": currency,
+                    "conversion_rate": 1,
+                    "plc_conversion_rate": 1,
+                    "transaction_date": today,
+                    "ignore_pricing_rule": 0,
+                }
+            )
+            rate = float(details.get("rate") if details.get("rate") is not None else row.unit_price)
+            price_list_rate = float(details.get("price_list_rate") or rate)
+            priced_items.append(
+                {
+                    "item_code": row.item_code,
+                    "item_name": details.get("item_name") or row.description,
+                    "qty": row.qty,
+                    "price_list_rate": price_list_rate,
+                    "discount_percentage": float(details.get("discount_percentage") or 0),
+                    "discount_amount": float(details.get("discount_amount") or 0),
+                    "rate": rate,
+                    "amount": round(row.qty * rate, 2),
+                    "pricing_rules": details.get("pricing_rules") or "",
+                }
+            )
+
+    summary = build_seller_invoice_summary(
+        priced_items,
+        apply_igtf=apply_igtf_flag,
+        iva_rate=iva_rate,
+        igtf_rate=igtf_rate,
+    )
+    return {
+        "currency": currency,
+        "items": priced_items,
+        "tax_summary": summary.to_dict(),
+    }
+
+
 @whitelist()
 def create_quick_invoice(
     customer: str,
@@ -198,18 +341,14 @@ def create_quick_invoice(
     apply_igtf_flag = bool(int(apply_igtf)) if isinstance(apply_igtf, (int, str)) else bool(apply_igtf)
     submit_flag = bool(int(submit)) if isinstance(submit, (int, str)) else bool(submit)
 
-    currency = "USD"
-    if price_list:
-        pl_currency = frappe.db.get_value("Price List", price_list, "currency")
-        if pl_currency:
-            currency = pl_currency
+    _, currency = _resolve_company_and_currency(price_list)
+    iva_rate, igtf_rate = _get_fiscal_rates()
 
     invoice_items = []
     for row in validated:
         item_dict = {
             "item_code": row.item_code,
             "qty": row.qty,
-            "rate": row.unit_price,
         }
         if warehouse:
             item_dict["warehouse"] = warehouse
@@ -222,6 +361,7 @@ def create_quick_invoice(
             "currency": currency,
             "selling_price_list": price_list or None,
             "update_stock": 1 if warehouse else 0,
+            "ignore_pricing_rule": 0,
             "ve_igtf_aplicado": 1 if apply_igtf_flag else 0,
             "remarks": f"Factura rápida vendedor | Método: {payment_method}",
             "items": invoice_items,
@@ -237,7 +377,21 @@ def create_quick_invoice(
         cashea_data = create_cashea_checkout(doc.name)
         doc.reload()
 
-    summary = build_seller_invoice_summary(parsed_items, apply_igtf=apply_igtf_flag)
+    actual_items = [
+        {
+            "item_code": row.item_code,
+            "item_name": row.item_name or row.item_code,
+            "qty": float(row.qty or 0),
+            "rate": float(row.rate or 0),
+        }
+        for row in doc.items
+    ]
+    summary = build_seller_invoice_summary(
+        actual_items or parsed_items,
+        apply_igtf=apply_igtf_flag,
+        iva_rate=iva_rate,
+        igtf_rate=igtf_rate,
+    )
     return {
         "invoice_name": doc.name,
         "status": doc.status,
