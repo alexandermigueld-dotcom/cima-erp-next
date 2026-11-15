@@ -26,13 +26,12 @@
 - **Internal Site ID:** `erpnext-yfl-bqf.v.frappe.cloud`
 - **Plan:** `USD 25` (`price_usd: 25.0`, `private_benches: 1`, `cpu_time_per_day: 2.0h`, `max_storage_usage: 25 GB`, `max_database_usage: 1 GB`, `offsite_backups: 1`).
 - **Region / Cluster:** `N. Virginia, USA` (`Virginia`).
-- **Current Bench:** `bench-30994-000171-f94v` (**Shared / Public Bench**, `group_public: 1`, `Version 16`).
-- **Site Config:** `server_script_enabled: 1` has been set via `press.api.site.update_config`, **but** `Server Script` execution still returns `403 ServerScriptNotEnabled` while the site remains on the Shared Bench.
-- **Why Shared → Private Bench migration is pending:** `frappe/press` (`press/api/site.py`, `press/api/bench.py`, `site_migration.py`) does not expose an API endpoint to migrate a same-version site from a Shared Bench to a Private Bench (`SiteMigration` raises `NotImplementedError` for same-server bench migrations). It must be done in the **Frappe Cloud Dashboard** (either via **Move to Private Bench / Change Bench** on the site, or by creating a Private Bench on `Version 16` / `Virginia` with `erpnext`, `payments`, `webshop`, `cima_ve` and restoring a backup of `erpnext-yfl-bqf.v.frappe.cloud`).
+- **Current Bench:** `bench-52215` (`bench-52215-000002-f94v`, **Private Bench**, `public: 0`, `Version 16`).
+- **Installed Custom App:** `cima_ve` (`0.1.0`, connected to `https://github.com/josephnowak/cima-erp-next`, `main`).
 
 ### ERPNext Instance (`https://cimaelectronicve.v.frappe.cloud`)
-- **Versions:** `Frappe 16.55.2`, `ERPNext 16.51.2`.
-- **Installed Apps:** `frappe`, `erpnext`, `payments`, `webshop`, `email_delivery_service`.
+- **Versions:** `Frappe 16.56.0`, `ERPNext 16.51.2`, `Cima VE 0.1.0`.
+- **Installed Apps:** `frappe`, `erpnext`, `payments`, `webshop`, `email_delivery_service`, `cima_ve`.
 - **Admin / API User:** `cimaelectronic@gmail.com` (has `System Manager` and `Script Manager` roles).
 - **Company & Fiscal Setup:**
   - Company: `CIMA ELECTRONIC VE` (default currency `USD`; `tax_id`/RIF still needs to be filled in ERPNext).
@@ -79,15 +78,14 @@ Local Python virtual environment (`.venv`, Python 3.14) is managed with `uv`:
 
 ---
 
-## 5. Immediate Next Steps
+## 5. Completed & Immediate Next Steps
 
-1. **Commit & Push to GitHub:**
-   - Review `git status` in `C:\Users\usuario\PycharmProjects\cima-erp-next` (confirm `.env`, `.venv/`, and `.idea/` are ignored).
-   - Commit and push to `https://github.com/josephnowak/cima-erp-next`.
-2. **Move Site to Private Bench in Frappe Cloud:**
-   - In `frappecloud.com`, create a **Private Bench** (`Version 16`, `Virginia` cluster) with `erpnext`, `payments`, `webshop`, and `cima_ve` (connected to `josephnowak/cima-erp-next`).
-   - Move `cimaelectronicve.v.frappe.cloud` (`erpnext-yfl-bqf.v.frappe.cloud`) onto the Private Bench (or restore a backup onto a new site in that Private Bench) and install `cima_ve`.
-3. **Live Testing & Configuration:**
-   - Verify `venta-rapida` page and `Facturación Cima` workspace live in ERPNext.
-   - Set `CIMA ELECTRONIC VE` `tax_id` (RIF) in ERPNext and configure `Cima VE Settings` (keep Simulation Mode ON until real credentials arrive).
-   - Replace simulator endpoints in `CasheaClient` and `FiscalPrinterClient` once real Cashea and Imprenta Digital API docs/credentials are available.
+1. **Completed:**
+   - Committed and pushed `cima_ve` to `https://github.com/josephnowak/cima-erp-next` (`main`).
+   - Migrated `cimaelectronicve.v.frappe.cloud` to Private Bench `bench-52215` (`bench-52215-000002-f94v`).
+   - Deployed and installed `cima_ve` (`0.1.0`) on `cimaelectronicve.v.frappe.cloud`.
+   - Verified `Cima VE Settings` (`simulation_mode=1`), `venta-rapida` page, `Facturación Cima` workspace, `get_seller_bootstrap`, and `search_inventory_and_prices` live.
+2. **Remaining Configuration & Credentials:**
+   - Verify `venta-rapida` page and `Facturación Cima` workspace visually in the ERPNext UI.
+   - Set `CIMA ELECTRONIC VE` `tax_id` (RIF) in ERPNext.
+   - Replace simulator endpoints/credentials in `Cima VE Settings`, `CasheaClient`, and `FiscalPrinterClient` once real Cashea and SENIAT Imprenta Digital API docs/credentials are available (keep Simulation Mode ON until then).
