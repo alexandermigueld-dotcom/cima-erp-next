@@ -27,7 +27,13 @@
   "pago_movil_info",
   "zelle_info",
   "binance_pay_info",
-  "bank_transfer_info"
+  "bank_transfer_info",
+  "delivery_providers",
+  "notifications_section",
+  "notify_order_email",
+  "notify_whatsapp_number",
+  "whatsapp_webhook_url",
+  "whatsapp_api_token"
  ],
  "fields": [
   {
@@ -159,6 +165,40 @@
    "fieldname": "bank_transfer_info",
    "fieldtype": "Small Text",
    "label": "Datos Transferencia Bancaria"
+  },
+  {
+   "description": "Lista JSON de proveedores de envío (ej. [{\"id\":\"mrw\",\"label\":\"MRW\",\"cost\":5.0,\"description\":\"Envío nacional\"}]). Si se deja vacío se usan los valores predeterminados.",
+   "fieldname": "delivery_providers",
+   "fieldtype": "Small Text",
+   "label": "Proveedores de Envío / Delivery (JSON)"
+  },
+  {
+   "fieldname": "notifications_section",
+   "fieldtype": "Section Break",
+   "label": "Notificaciones de Pedidos (Tienda Web)"
+  },
+  {
+   "default": "cimaelectronic@gmail.com",
+   "fieldname": "notify_order_email",
+   "fieldtype": "Data",
+   "label": "Correo para Notificación de Pedidos"
+  },
+  {
+   "description": "Número con código de país (ej. 584121234567) para coordinación por WhatsApp.",
+   "fieldname": "notify_whatsapp_number",
+   "fieldtype": "Data",
+   "label": "WhatsApp de Coordinación de Entregas"
+  },
+  {
+   "description": "URL de Webhook / API de WhatsApp (opcional) para envío automático al recibir un pedido.",
+   "fieldname": "whatsapp_webhook_url",
+   "fieldtype": "Data",
+   "label": "WhatsApp Webhook URL (Opcional)"
+  },
+  {
+   "fieldname": "whatsapp_api_token",
+   "fieldtype": "Password",
+   "label": "WhatsApp API Token (Opcional)"
   }
  ],
  "issingle": 1,

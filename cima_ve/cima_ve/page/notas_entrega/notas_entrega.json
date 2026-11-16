@@ -1,0 +1,28 @@
+{
+ "content": null,
+ "creation": "2026-11-16 22:10:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-11-16 22:10:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cima VE",
+ "name": "notas-entrega",
+ "owner": "Administrator",
+ "page_name": "notas-entrega",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Notas de Entrega"
+}

@@ -5,9 +5,13 @@ import json
 from cima_ve.api._compat import whitelist
 from cima_ve.services.storefront_service import (
     DEFAULT_PRODUCT_IMAGE,
+    build_order_notification_payload,
     build_payment_methods_catalog,
+    build_whatsapp_link,
     calculate_storefront_totals,
     normalize_rif_or_cedula,
+    parse_delivery_providers,
+    resolve_delivery_provider,
     validate_registration_payload,
 )
 
@@ -56,6 +60,10 @@ def _get_storefront_config() -> dict:
         "zelle_info": settings.get("zelle_info") or "",
         "binance_pay_info": settings.get("binance_pay_info") or "",
         "bank_transfer_info": settings.get("bank_transfer_info") or "",
+        "delivery_providers": parse_delivery_providers(settings.get("delivery_providers")),
+        "notify_order_email": (settings.get("notify_order_email") or "cimaelectronic@gmail.com").strip(),
+        "notify_whatsapp_number": (settings.get("notify_whatsapp_number") or "").strip(),
+        "whatsapp_webhook_url": (settings.get("whatsapp_webhook_url") or "").strip(),
     }
 
 
@@ -304,6 +312,7 @@ def get_storefront_bootstrap() -> dict:
         "auth": auth,
         "categories": categories,
         "payment_methods": build_payment_methods_catalog(cfg),
+        "delivery_providers": cfg["delivery_providers"],
         "settings": {
             "company": cfg["company"],
             "warehouse": cfg["warehouse"],
@@ -313,6 +322,7 @@ def get_storefront_bootstrap() -> dict:
             "igtf_rate": cfg["igtf_rate"],
             "simulation_mode": cfg["simulation_mode"],
             "default_image": DEFAULT_PRODUCT_IMAGE,
+            "notify_whatsapp_number": cfg["notify_whatsapp_number"],
         },
     }
 
@@ -433,18 +443,26 @@ def get_catalog(
 
 
 @whitelist(allow_guest=True)
-def preview_storefront_cart(items: str | list[dict], payment_method: str = "cashea") -> dict:
-    """Calcula precios reales (con Pricing Rules), IVA e IGTF para el carrito de tienda."""
+def preview_storefront_cart(
+    items: str | list[dict],
+    payment_method: str = "cashea",
+    delivery_provider: str = "",
+) -> dict:
+    """Calcula precios reales (con Pricing Rules), IVA, IGTF y costo de envío para el carrito de tienda."""
     import frappe
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
+    cfg = _get_storefront_config()
+    provider = resolve_delivery_provider(delivery_provider, cfg["delivery_providers"])
+    shipping_cost = float(provider.get("cost") or 0.0) if parsed_items else 0.0
+
     if not parsed_items:
         return {
             "items": [],
-            "totals": calculate_storefront_totals([], payment_method=payment_method),
+            "delivery_provider": provider,
+            "totals": calculate_storefront_totals([], payment_method=payment_method, shipping_cost=0.0),
         }
 
-    cfg = _get_storefront_config()
     priced_items: list[dict] = []
 
     try:
@@ -504,8 +522,9 @@ def preview_storefront_cart(items: str | list[dict], payment_method: str = "cash
         payment_method=payment_method,
         iva_rate=cfg["iva_rate"],
         igtf_rate=cfg["igtf_rate"],
+        shipping_cost=shipping_cost,
     )
-    return {"items": priced_items, "totals": totals}
+    return {"items": priced_items, "delivery_provider": provider, "totals": totals}
 
 
 @whitelist(allow_guest=True)
@@ -633,14 +652,100 @@ def update_my_fiscal_profile(
     return {"ok": True, "profile": _get_customer_profile_dict(user_email)}
 
 
+def _resolve_shipping_account(company: str) -> str:
+    import frappe
+
+    for field in ("default_income_account", "freight_and_forwarding_account"):
+        acc = frappe.db.get_value("Company", company, field)
+        if acc:
+            return acc
+    accounts = frappe.get_all(
+        "Account",
+        filters={"company": company, "is_group": 0, "root_type": "Income"},
+        pluck="name",
+        limit=1,
+    )
+    if accounts:
+        return accounts[0]
+    fallback = frappe.get_all(
+        "Account",
+        filters={"company": company, "is_group": 0},
+        pluck="name",
+        limit=1,
+    )
+    return fallback[0] if fallback else ""
+
+
+def _send_storefront_order_notifications(cfg: dict, order_payload: dict) -> dict:
+    """Envía notificación de nuevo pedido por correo electrónico y WhatsApp (webhook + enlace directo)."""
+    import urllib.request
+    import frappe
+
+    notif = build_order_notification_payload(**order_payload)
+    email_sent = False
+    whatsapp_sent = False
+
+    target_email = (cfg.get("notify_order_email") or "").strip()
+    if target_email:
+        try:
+            frappe.sendmail(
+                recipients=[target_email],
+                subject=notif["subject"],
+                message=notif["html"],
+                now=True,
+            )
+            email_sent = True
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Storefront Email Notification Error")
+
+    webhook_url = (cfg.get("whatsapp_webhook_url") or "").strip()
+    if webhook_url:
+        try:
+            settings = frappe.get_single("Cima VE Settings")
+            token = ""
+            try:
+                token = settings.get_password("whatsapp_api_token") or ""
+            except Exception:
+                token = ""
+            body = json.dumps(
+                {
+                    "to": cfg.get("notify_whatsapp_number") or "",
+                    "message": notif["text"],
+                    "order_id": order_payload.get("order_id"),
+                    "customer_name": order_payload.get("customer_name"),
+                    "customer_email": order_payload.get("customer_email"),
+                    "customer_phone": order_payload.get("customer_phone"),
+                    "delivery_provider": order_payload.get("delivery_label"),
+                    "grand_total": order_payload.get("grand_total"),
+                }
+            ).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(webhook_url, data=body, headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=8)
+            whatsapp_sent = True
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Storefront WhatsApp Notification Error")
+
+    store_wa_link = build_whatsapp_link(cfg.get("notify_whatsapp_number"), notif["text"])
+    return {
+        "email_sent": email_sent,
+        "whatsapp_sent": whatsapp_sent,
+        "store_whatsapp_url": store_wa_link,
+        "customer_whatsapp_url": notif["customer_whatsapp_url"],
+    }
+
+
 @whitelist(allow_guest=True)
 def place_storefront_order(
     items: str | list[dict],
     payment_method: str = "cashea",
     payment_details: str | dict | None = None,
     customer_info: str | dict | None = None,
+    delivery_provider: str = "",
 ) -> dict:
-    """Crea el pedido (Sales Order) en ERPNext y procesa Cashea / Google Pay / métodos manuales."""
+    """Crea el pedido (Sales Order) en ERPNext, incluye envío, y notifica por Correo y WhatsApp."""
     import frappe
     from frappe.utils import add_days, today
 
@@ -652,42 +757,62 @@ def place_storefront_order(
     cust_info = json.loads(customer_info) if isinstance(customer_info, str) else (customer_info or {})
 
     cfg = _get_storefront_config()
+    provider = resolve_delivery_provider(delivery_provider, cfg["delivery_providers"])
+    shipping_cost = float(provider.get("cost") or 0.0)
+    address_text = (cust_info.get("address") or "").strip()
+    if provider.get("requires_address") and not address_text:
+        frappe.throw(f"Ingresa la dirección o agencia de entrega para {provider['label']}.")
+
     user_email = frappe.session.user
+    effective_email = ""
+    effective_name = (cust_info.get("full_name") or "").strip()
+    effective_phone = (cust_info.get("phone") or "").strip()
 
     if user_email == "Guest":
         guest_email = (cust_info.get("email") or "").strip().lower()
-        guest_name = (cust_info.get("full_name") or "").strip()
-        if not guest_email or not guest_name:
-            frappe.throw("Inicia sesión o ingresa tu nombre y correo para completar el pedido.")
+        if not guest_email or "@" not in guest_email or "." not in guest_email.split("@")[-1]:
+            frappe.throw("Ingresa un correo electrónico válido para completar el pedido.")
+        if not effective_name:
+            frappe.throw("Ingresa tu nombre completo para completar el pedido.")
+        effective_email = guest_email
         if cust_info.get("password"):
             register_customer(
                 email=guest_email,
-                full_name=guest_name,
+                full_name=effective_name,
                 password=cust_info.get("password"),
                 ve_rif_cedula=cust_info.get("ve_rif_cedula", ""),
                 ve_taxpayer_type=cust_info.get("ve_taxpayer_type", "No Contribuyente"),
-                phone=cust_info.get("phone", ""),
-                address=cust_info.get("address", ""),
+                phone=effective_phone,
+                address=address_text,
             )
             customer_name = _ensure_customer_for_user(guest_email)
         else:
             customer_name = _ensure_customer_for_user(
                 user_email=guest_email,
-                full_name=guest_name,
+                full_name=effective_name,
                 ve_rif_cedula=cust_info.get("ve_rif_cedula", ""),
                 ve_taxpayer_type=cust_info.get("ve_taxpayer_type", "No Contribuyente"),
-                phone=cust_info.get("phone", ""),
-                address=cust_info.get("address", ""),
+                phone=effective_phone,
+                address=address_text,
             )
     else:
+        if "@" not in user_email:
+            fallback_email = (cust_info.get("email") or "").strip().lower()
+            if not fallback_email or "@" not in fallback_email:
+                frappe.throw("Tu cuenta debe tener un correo electrónico válido.")
+            effective_email = fallback_email
+        else:
+            effective_email = user_email
         customer_name = _ensure_customer_for_user(
             user_email=user_email,
-            full_name=cust_info.get("full_name", ""),
+            full_name=effective_name,
             ve_rif_cedula=cust_info.get("ve_rif_cedula", ""),
             ve_taxpayer_type=cust_info.get("ve_taxpayer_type", "No Contribuyente"),
-            phone=cust_info.get("phone", ""),
-            address=cust_info.get("address", ""),
+            phone=effective_phone,
+            address=address_text,
         )
+        if not effective_name:
+            effective_name = frappe.db.get_value("Customer", customer_name, "customer_name") or effective_email
 
     so = frappe.new_doc("Sales Order")
     so.customer = customer_name
@@ -701,7 +826,7 @@ def place_storefront_order(
         so.set_warehouse = cfg["warehouse"]
 
     ref_code = (pay_details.get("reference") or "").strip()
-    so.po_no = f"{payment_method.upper()}{': ' + ref_code if ref_code else ''}"[:140]
+    so.po_no = f"{payment_method.upper()} | {provider['label']}{': ' + ref_code if ref_code else ''}"[:140]
 
     for row in parsed_items:
         qty = float(row.get("qty") or 0)
@@ -719,19 +844,37 @@ def place_storefront_order(
     if not so.items:
         frappe.throw("No hay productos válidos en el pedido.")
 
+    if shipping_cost > 0:
+        ship_account = _resolve_shipping_account(cfg["company"])
+        if ship_account:
+            so.append(
+                "taxes",
+                {
+                    "charge_type": "Actual",
+                    "account_head": ship_account,
+                    "description": f"Envío ({provider['label']})",
+                    "tax_amount": shipping_cost,
+                },
+            )
+
     from cima_ve.api.seller_pos import _apply_required_sales_metadata
 
     _apply_required_sales_metadata(so, sales_channel="Detal")
     so.insert(ignore_permissions=True)
     so.submit()
 
-    note_parts = [f"Método de pago web: {payment_method}"]
+    note_parts = [
+        f"Método de pago web: {payment_method}",
+        f"Envío: {provider['label']} (${shipping_cost:.2f})",
+    ]
+    if address_text:
+        note_parts.append(f"Dirección: {address_text}")
     if ref_code:
         note_parts.append(f"Referencia: {ref_code}")
     if pay_details.get("bank"):
         note_parts.append(f"Banco/Emisor: {pay_details.get('bank')}")
-    if pay_details.get("phone"):
-        note_parts.append(f"Teléfono: {pay_details.get('phone')}")
+    if effective_phone:
+        note_parts.append(f"Teléfono: {effective_phone}")
     if pay_details.get("token_summary"):
         note_parts.append(f"Token navegador: {pay_details.get('token_summary')}")
     so.add_comment("Comment", " | ".join(note_parts))
@@ -741,6 +884,7 @@ def place_storefront_order(
         "sales_order": so.name,
         "grand_total": float(so.grand_total or 0),
         "payment_method": payment_method,
+        "delivery_provider": provider,
         "status": "Pedido registrado",
     }
 
@@ -765,6 +909,33 @@ def place_storefront_order(
                 result["status"] = "Pago autorizado (Google Pay)"
         except Exception as exc:
             result["invoice_warning"] = str(exc)
+
+    notif_items = [
+        {
+            "item_code": r.item_code,
+            "item_name": r.item_name or r.item_code,
+            "qty": float(r.qty or 0),
+            "rate": float(r.rate or 0),
+        }
+        for r in so.items
+    ]
+    notif_result = _send_storefront_order_notifications(
+        cfg,
+        {
+            "order_id": so.name,
+            "customer_name": effective_name,
+            "customer_email": effective_email,
+            "customer_phone": effective_phone,
+            "address": address_text,
+            "delivery_label": provider["label"],
+            "delivery_cost": shipping_cost,
+            "payment_method": payment_method,
+            "payment_reference": ref_code,
+            "items": notif_items,
+            "grand_total": float(so.grand_total or 0),
+        },
+    )
+    result["notifications"] = notif_result
 
     frappe.db.commit()
     return result

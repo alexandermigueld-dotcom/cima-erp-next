@@ -100,7 +100,7 @@ class SellerPosServiceTests(unittest.TestCase):
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
         self.assertEqual(len(ws_data), 1)
         self.assertEqual(ws_data[0]["label"], "Facturación Cima")
-        self.assertEqual(len(ws_data[0]["shortcuts"]), 3)
+        self.assertEqual(len(ws_data[0]["shortcuts"]), 4)
         self.assertIn("ve_vendedor_usuario", seller_pos_py)
         self.assertIn("cima-logged-seller-badge", js_text)
 

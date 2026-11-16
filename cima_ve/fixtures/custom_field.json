@@ -174,5 +174,131 @@
   "module": "Cima VE",
   "name": "Sales Invoice-cashea_down_payment",
   "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_section",
+  "fieldtype": "Section Break",
+  "insert_after": "remarks",
+  "label": "Control de Nota de Entrega (Cima VE)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_vendedor_usuario",
+  "fieldtype": "Link",
+  "insert_after": "ve_ne_section",
+  "label": "Usuario Vendedor",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_vendedor_usuario",
+  "options": "User",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_vendedor_nombre",
+  "fieldtype": "Data",
+  "insert_after": "ve_vendedor_usuario",
+  "label": "Nombre del Vendedor",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_vendedor_nombre",
+  "read_only": 1
+ },
+ {
+  "default": "Pendiente",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_estado",
+  "fieldtype": "Select",
+  "insert_after": "ve_vendedor_nombre",
+  "label": "Estado Nota de Entrega",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_estado",
+  "options": "Pendiente\nPagada\nCancelada",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_fecha_resolucion",
+  "fieldtype": "Datetime",
+  "insert_after": "ve_ne_estado",
+  "label": "Fecha de Pago / Cancelación",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_fecha_resolucion",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_usuario_resolucion",
+  "fieldtype": "Link",
+  "insert_after": "ve_ne_fecha_resolucion",
+  "label": "Procesado Por",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_usuario_resolucion",
+  "options": "User",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_metodo_pago",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_usuario_resolucion",
+  "label": "Método de Pago (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_metodo_pago",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_aplica_iva",
+  "fieldtype": "Check",
+  "insert_after": "ve_ne_metodo_pago",
+  "label": "Aplica IVA",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_aplica_iva",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_aplica_igtf",
+  "fieldtype": "Check",
+  "insert_after": "ve_ne_aplica_iva",
+  "label": "Aplica IGTF",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_aplica_igtf",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_factura",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_aplica_igtf",
+  "label": "Factura Generada",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_factura",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_motivo_cancelacion",
+  "fieldtype": "Small Text",
+  "insert_after": "ve_ne_factura",
+  "label": "Motivo de Cancelación",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_motivo_cancelacion",
+  "read_only": 1
  }
 ]

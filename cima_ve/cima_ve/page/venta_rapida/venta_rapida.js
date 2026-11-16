@@ -53,10 +53,16 @@ class CimaSellerPortal {
 					</div>
 					<div class="cima-hero-actions">
 						<button type="button" class="cima-btn-start-invoice" data-action="start-invoice">
-							+ INICIAR FACTURACIÓN
+							+ Nota de Entrega
 						</button>
 						<button type="button" class="cima-btn-inventory" data-action="tab-inventory">
 							Ver Inventario y Precios
+						</button>
+						<button type="button" class="cima-btn-inventory" data-action="open-delivery-notes">
+							Notas de Entrega
+						</button>
+						<button type="button" class="cima-btn-inventory" data-action="open-client-consumption">
+							Clientes y Consumo
 						</button>
 						<button type="button" class="cima-btn-inventory" data-action="open-metrics">
 							Métricas de Ventas
@@ -150,8 +156,11 @@ class CimaSellerPortal {
 							</div>
 
 							<button type="button" id="cima-btn-emit" class="cima-btn-emit" disabled>
-								EMITIR FACTURA FISCAL
+								EMITIR NOTA DE ENTREGA
 							</button>
+							<div class="text-muted small text-center mt-2">
+								Descuenta inventario y queda pendiente por cobrar en Notas de Entrega.
+							</div>
 						</div>
 					</div>
 				</div>
@@ -206,6 +215,14 @@ class CimaSellerPortal {
 		root.on("click", "[data-action='tab-inventory']", () => {
 			this.switchTab("inventario");
 			this.loadInventory(root.find("#cima-inv-search").val() || "");
+		});
+
+		root.on("click", "[data-action='open-delivery-notes']", () => {
+			frappe.set_route("notas-entrega");
+		});
+
+		root.on("click", "[data-action='open-client-consumption']", () => {
+			frappe.set_route("clientes-consumo");
 		});
 
 		root.on("click", "[data-action='open-metrics']", () => {
@@ -730,10 +747,10 @@ class CimaSellerPortal {
 			return;
 		}
 		const btn = this.wrapper.find("#cima-btn-emit");
-		btn.prop("disabled", true).text("Emitiendo factura...");
+		btn.prop("disabled", true).text("Emitiendo Nota de Entrega...");
 
 		frappe.call({
-			method: "cima_ve.api.seller_pos.create_quick_invoice",
+			method: "cima_ve.api.delivery_notes.create_quick_delivery_note",
 			args: {
 				customer: this.state.selectedCustomer,
 				items: JSON.stringify(this.state.cart),
@@ -741,12 +758,10 @@ class CimaSellerPortal {
 				warehouse: this.state.warehouse,
 				sales_channel: this.state.salesChannel,
 				sales_person: this.state.salesPerson,
-				payment_method: this.state.paymentMethod,
-				apply_igtf: this.state.applyIgtf ? 1 : 0,
-				submit: 1,
+				notes: `Método sugerido: ${this.state.paymentMethod}`,
 			},
 			callback: (r) => {
-				btn.text("EMITIR FACTURA FISCAL");
+				btn.text("EMITIR NOTA DE ENTREGA");
 				if (r.message) {
 					this.state.lastInvoiceResult = r.message;
 					this.state.cart = [];
@@ -756,7 +771,7 @@ class CimaSellerPortal {
 				}
 			},
 			error: () => {
-				btn.prop("disabled", false).text("EMITIR FACTURA FISCAL");
+				btn.prop("disabled", false).text("EMITIR NOTA DE ENTREGA");
 			},
 		});
 	}
@@ -768,22 +783,19 @@ class CimaSellerPortal {
 			box.empty();
 			return;
 		}
-		const fiscal = res.fiscal || {};
-		const cashea = res.cashea || null;
 		const seller = res.seller || {};
 		const sellerLabel = seller.fullname
 			? `${seller.fullname} (${seller.user || ""})`
 			: (seller.user || frappe.session.user || "");
+		const docName = res.delivery_note || res.invoice_name || "";
 		box.html(`
 			<div class="cima-result-banner">
-				<div><strong>Factura emitida:</strong> ${frappe.utils.escape_html(res.invoice_name)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
+				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Base: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
 				<div class="small mt-1">
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)} ·
-					<strong>N° Control Fiscal:</strong> ${frappe.utils.escape_html(fiscal.control_number || "Pendiente")} ·
-					<strong>Estado:</strong> ${frappe.utils.escape_html(fiscal.status || "-")}
-					${fiscal.pdf_url ? ` · <a href="${frappe.utils.escape_html(fiscal.pdf_url)}" target="_blank">Ver PDF Fiscal</a>` : ""}
+					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")} (Inventario descontado, pendiente por cobrar)
+					· <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>
 				</div>
-				${cashea ? `<div class="small mt-1"><strong>Cashea:</strong> Orden ${frappe.utils.escape_html(cashea.order_id)} — Inicial $${Number(cashea.down_payment_usd).toFixed(2)} (<a href="${frappe.utils.escape_html(cashea.checkout_url)}" target="_blank">Link de pago</a>)</div>` : ""}
 			</div>
 		`);
 	}

@@ -14,6 +14,7 @@
     cart: loadCart(),
     cartPreview: null,
     selectedPayment: "cashea",
+    selectedDelivery: "pickup",
   };
 
   function loadCart() {
@@ -87,6 +88,10 @@
     bindEvents();
     try {
       state.bootstrap = await apiCall("cima_ve.api.storefront.get_storefront_bootstrap");
+      const providers = state.bootstrap?.delivery_providers || [];
+      if (providers.length && !providers.some((p) => p.id === state.selectedDelivery)) {
+        state.selectedDelivery = providers[0].id;
+      }
       renderBootstrap();
       await loadCatalog();
     } catch (err) {
@@ -416,14 +421,14 @@
         <button type="button" class="cima-tab" id="tab-register">Crear Cuenta</button>
       </div>
       <div id="pane-login">
-        <div class="cima-field"><label>Correo electrónico</label><input id="login-email" type="email"></div>
-        <div class="cima-field"><label>Contraseña</label><input id="login-pwd" type="password"></div>
+        <div class="cima-field"><label>Correo electrónico *</label><input id="login-email" type="email" required placeholder="tu@correo.com"></div>
+        <div class="cima-field"><label>Contraseña *</label><input id="login-pwd" type="password" required></div>
         <button type="button" id="btn-do-login" class="cima-btn-primary cima-btn-block">Entrar</button>
       </div>
       <div id="pane-register" class="hidden">
-        <div class="cima-field"><label>Nombre completo *</label><input id="reg-name"></div>
-        <div class="cima-field"><label>Correo electrónico *</label><input id="reg-email" type="email"></div>
-        <div class="cima-field"><label>Contraseña (mín. 6 caracteres) *</label><input id="reg-pwd" type="password"></div>
+        <div class="cima-field"><label>Nombre completo *</label><input id="reg-name" required></div>
+        <div class="cima-field"><label>Correo electrónico *</label><input id="reg-email" type="email" required placeholder="tu@correo.com"></div>
+        <div class="cima-field"><label>Contraseña (mín. 6 caracteres) *</label><input id="reg-pwd" type="password" required></div>
         <div class="cima-grid-2">
           <div class="cima-field"><label>RIF / Cédula (Opcional)</label><input id="reg-rif" placeholder="V-12345678"></div>
           <div class="cima-field"><label>Tipo Contribuyente</label>
@@ -432,7 +437,7 @@
             </select>
           </div>
         </div>
-        <div class="cima-field"><label>Teléfono / WhatsApp (Opcional)</label><input id="reg-phone"></div>
+        <div class="cima-field"><label>Teléfono / WhatsApp (Opcional, recomendado para envíos)</label><input id="reg-phone" placeholder="0412-1234567"></div>
         <button type="button" id="btn-do-register" class="cima-btn-primary cima-btn-block">Crear Cuenta</button>
       </div>`;
 
@@ -456,8 +461,12 @@
 
     document.getElementById("btn-do-login").onclick = async () => {
       try {
+        const emailVal = (document.getElementById("login-email").value || "").trim().toLowerCase();
+        if (!emailVal || !emailVal.includes("@") || !emailVal.split("@").pop().includes(".")) {
+          throw new Error("Ingresa un correo electrónico válido para iniciar sesión.");
+        }
         await apiCall("login", {
-          usr: document.getElementById("login-email").value,
+          usr: emailVal,
           pwd: document.getElementById("login-pwd").value,
         });
         location.reload();
@@ -491,7 +500,16 @@
 
     const user = state.bootstrap?.user || { is_guest: true };
     const methods = state.bootstrap?.payment_methods || [];
-    const totals = state.cartPreview?.totals || { grand_total: 0, taxable_base: 0, iva_amount: 0, igtf_amount: 0 };
+    const providers = state.bootstrap?.delivery_providers || [];
+    if (providers.length && !providers.some((p) => p.id === state.selectedDelivery)) {
+      state.selectedDelivery = providers[0].id;
+    }
+
+    state.cartPreview = await apiCall("cima_ve.api.storefront.preview_storefront_cart", {
+      items: state.cart,
+      payment_method: state.selectedPayment,
+      delivery_provider: state.selectedDelivery,
+    });
 
     body.innerHTML = `
       <h2 style="margin-top:0;">Finalizar Compra</h2>
@@ -499,7 +517,7 @@
         <div>
           <h4>1. Tus datos y facturación (RIF opcional)</h4>
           <div class="cima-field"><label>Nombre completo *</label><input id="chk-name" value="${escapeHtml(user.full_name === "Invitado" ? "" : user.full_name)}"></div>
-          <div class="cima-field"><label>Correo electrónico *</label><input id="chk-email" type="email" value="${escapeHtml(user.email || "")}" ${!user.is_guest ? "readonly" : ""}></div>
+          <div class="cima-field"><label>Correo electrónico *</label><input id="chk-email" type="email" required value="${escapeHtml(user.email || "")}" ${!user.is_guest ? "readonly" : ""}></div>
           <div class="cima-grid-2">
             <div class="cima-field"><label>RIF / Cédula (Opcional)</label><input id="chk-rif" placeholder="V-12345678" value="${escapeHtml(user.ve_rif_cedula || "")}"></div>
             <div class="cima-field"><label>Contribuyente</label>
@@ -508,11 +526,21 @@
               </select>
             </div>
           </div>
-          <div class="cima-field"><label>Teléfono / WhatsApp</label><input id="chk-phone" value="${escapeHtml(user.phone || "")}"></div>
-          <div class="cima-field"><label>Dirección de entrega / fiscal</label><input id="chk-address" value="${escapeHtml(user.address || "")}"></div>
+          <div class="cima-field"><label>Teléfono / WhatsApp (Opcional, para coordinar envío)</label><input id="chk-phone" placeholder="0412-1234567" value="${escapeHtml(user.phone || "")}"></div>
+          <div class="cima-field"><label>Dirección de entrega / Agencia (MRW, Zoom, etc.)</label><input id="chk-address" placeholder="Ej. Agencia MRW Altamira / Dirección exacta" value="${escapeHtml(user.address || "")}"></div>
+
+          <h4 style="margin-top:14px;">2. Proveedor de Envío / Delivery</h4>
+          <div class="cima-pay-grid" id="chk-delivery-grid">
+            ${providers.map((p) => `
+              <button type="button" class="cima-pay-option ${p.id === state.selectedDelivery ? "selected" : ""}" data-delivery-id="${escapeHtml(p.id)}">
+                <div style="font-weight:800;font-size:13px;">${escapeHtml(p.label)}</div>
+                <span class="cima-pay-option-badge">${p.cost > 0 ? money(p.cost) : "Gratis"}</span>
+              </button>`).join("")}
+          </div>
+          <div id="chk-delivery-desc" style="font-size:12px;color:#475569;margin-bottom:8px;"></div>
         </div>
         <div>
-          <h4>2. Método de pago</h4>
+          <h4>3. Método de pago</h4>
           <div class="cima-pay-grid" id="chk-pay-grid">
             ${methods.map((m) => `
               <button type="button" class="cima-pay-option ${m.id === state.selectedPayment ? "selected" : ""}" data-pay-id="${m.id}">
@@ -528,6 +556,20 @@
 
     renderCheckoutPaymentDetails();
 
+    body.querySelectorAll("[data-delivery-id]").forEach((btn) => {
+      btn.onclick = async () => {
+        state.selectedDelivery = btn.dataset.deliveryId;
+        body.querySelectorAll("[data-delivery-id]").forEach((b) => b.classList.toggle("selected", b.dataset.deliveryId === state.selectedDelivery));
+        const preview = await apiCall("cima_ve.api.storefront.preview_storefront_cart", {
+          items: state.cart,
+          payment_method: state.selectedPayment,
+          delivery_provider: state.selectedDelivery,
+        });
+        state.cartPreview = preview;
+        renderCheckoutPaymentDetails();
+      };
+    });
+
     body.querySelectorAll("[data-pay-id]").forEach((btn) => {
       btn.onclick = async () => {
         state.selectedPayment = btn.dataset.payId;
@@ -535,6 +577,7 @@
         const preview = await apiCall("cima_ve.api.storefront.preview_storefront_cart", {
           items: state.cart,
           payment_method: state.selectedPayment,
+          delivery_provider: state.selectedDelivery,
         });
         state.cartPreview = preview;
         renderCheckoutPaymentDetails();
@@ -564,10 +607,18 @@
     }
     detailsEl.innerHTML = extraHtml;
 
+    const providers = state.bootstrap?.delivery_providers || [];
+    const dp = providers.find((x) => x.id === state.selectedDelivery) || providers[0];
+    const deliveryDescEl = document.getElementById("chk-delivery-desc");
+    if (deliveryDescEl && dp) {
+      deliveryDescEl.textContent = `${dp.description || dp.label} ${dp.cost > 0 ? "• Costo: " + money(dp.cost) : "• Sin costo"}`;
+    }
+
     document.getElementById("chk-totals-summary").innerHTML = `
       <div class="cima-total-row"><span>Base imponible:</span><strong>${money(t.taxable_base)}</strong></div>
       <div class="cima-total-row"><span>IVA (16%):</span><strong>${money(t.iva_amount)}</strong></div>
       ${t.igtf_amount > 0 ? `<div class="cima-total-row"><span>IGTF (3%):</span><strong>${money(t.igtf_amount)}</strong></div>` : ""}
+      <div class="cima-total-row"><span>Envío (${escapeHtml(dp?.label || "Retiro")}):</span><strong>${Number(t.shipping_cost || 0) > 0 ? money(t.shipping_cost) : "Gratis"}</strong></div>
       <div class="cima-total-row cima-total-grand"><span>Total a pagar:</span><span>${money(t.grand_total)}</span></div>`;
   }
 
@@ -619,6 +670,7 @@
       const resp = await apiCall("cima_ve.api.storefront.place_storefront_order", {
         items: state.cart,
         payment_method: state.selectedPayment,
+        delivery_provider: state.selectedDelivery,
         payment_details: paymentDetails,
         customer_info: {
           full_name: document.getElementById("chk-name").value,
@@ -641,14 +693,23 @@
              </a>
            </div>`
         : "";
+      const waStoreUrl = resp.notifications?.store_whatsapp_url || "";
+      const waHtml = waStoreUrl
+        ? `<div style="margin:10px 0;">
+             <a href="${escapeHtml(waStoreUrl)}" target="_blank" class="cima-btn-outline" style="display:inline-block;text-decoration:none;border-color:#16a34a;color:#15803d;">
+               Coordinar entrega por WhatsApp
+             </a>
+           </div>`
+        : "";
 
       document.getElementById("checkout-modal-body").innerHTML = `
         <div style="text-align:center;padding:20px 10px;">
           <div style="font-size:42px;">✅</div>
           <h2>¡Pedido confirmado!</h2>
           <p>Orden ERPNext: <strong>${escapeHtml(resp.sales_order)}</strong> ${resp.sales_invoice ? `• Factura: <strong>${escapeHtml(resp.sales_invoice)}</strong>` : ""}</p>
-          <p>Estado: <strong>${escapeHtml(resp.status)}</strong></p>
+          <p>Envío: <strong>${escapeHtml(resp.delivery_provider?.label || "Retiro en Tienda")}</strong> • Estado: <strong>${escapeHtml(resp.status)}</strong></p>
           ${casheaHtml}
+          ${waHtml}
           <button type="button" class="cima-btn-primary" onclick="document.getElementById('checkout-modal').classList.add('hidden')">Seguir comprando</button>
         </div>`;
     } catch (err) {

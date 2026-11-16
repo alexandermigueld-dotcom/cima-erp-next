@@ -1,0 +1,107 @@
+.cima-ne-shell {
+	padding: 12px 4px 28px;
+}
+
+.cima-ne-hero {
+	background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+	color: #fff;
+	border-radius: 12px;
+	padding: 18px 22px;
+	margin-bottom: 16px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.cima-ne-hero h2 {
+	margin: 0 0 4px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #fff;
+}
+
+.cima-ne-hero p {
+	margin: 0;
+	font-size: 13px;
+	color: #cbd5e1;
+}
+
+.cima-ne-kpis {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.cima-ne-kpi {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 14px 16px;
+}
+
+.cima-ne-kpi-label {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: #64748b;
+}
+
+.cima-ne-kpi-val {
+	font-size: 22px;
+	font-weight: 800;
+	color: #0f172a;
+	margin-top: 4px;
+}
+
+.cima-ne-kpi-sub {
+	font-size: 12px;
+	color: #475569;
+	margin-top: 2px;
+}
+
+.cima-ne-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 16px;
+	margin-bottom: 16px;
+}
+
+.cima-ne-filters {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 10px;
+	align-items: end;
+}
+
+.cima-ne-badge {
+	display: inline-block;
+	padding: 3px 9px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.cima-ne-badge-pendiente {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+.cima-ne-badge-pagada {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.cima-ne-badge-cancelada {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.cima-ne-actions {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}

@@ -1,0 +1,89 @@
+.cima-cc-shell {
+	padding: 12px 4px 28px;
+}
+
+.cima-cc-hero {
+	background: linear-gradient(135deg, #131921 0%, #232f3e 100%);
+	color: #fff;
+	border-radius: 12px;
+	padding: 18px 22px;
+	margin-bottom: 16px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.cima-cc-hero h2 {
+	margin: 0 0 4px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #fff;
+}
+
+.cima-cc-hero p {
+	margin: 0;
+	font-size: 13px;
+	color: #cbd5e1;
+}
+
+.cima-cc-kpis {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.cima-cc-kpi {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 14px 16px;
+}
+
+.cima-cc-kpi-label {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: #64748b;
+}
+
+.cima-cc-kpi-val {
+	font-size: 22px;
+	font-weight: 800;
+	color: #0f172a;
+	margin-top: 4px;
+}
+
+.cima-cc-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 16px;
+	margin-bottom: 16px;
+}
+
+.cima-cc-filters {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+	gap: 10px;
+	align-items: end;
+}
+
+.cima-seller-pill {
+	display: inline-block;
+	background: #eff6ff;
+	border: 1px solid #bfdbfe;
+	color: #1e40af;
+	border-radius: 6px;
+	padding: 2px 8px;
+	font-size: 11px;
+	margin: 2px 4px 2px 0;
+}
+
+.cima-seller-pill-pending {
+	background: #fffbeb;
+	border-color: #fde68a;
+	color: #92400e;
+}

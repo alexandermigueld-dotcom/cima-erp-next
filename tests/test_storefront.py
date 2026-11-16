@@ -4,10 +4,14 @@ import unittest
 
 from cima_ve.services.storefront_service import (
     DEFAULT_PRODUCT_IMAGE,
+    build_order_notification_payload,
     build_payment_methods_catalog,
+    build_whatsapp_link,
     calculate_storefront_totals,
     format_cashea_installments,
     normalize_rif_or_cedula,
+    parse_delivery_providers,
+    resolve_delivery_provider,
     validate_registration_payload,
 )
 
@@ -95,6 +99,53 @@ class StorefrontServiceTests(unittest.TestCase):
         self.assertIn("storefront_warehouse", fieldnames)
         self.assertIn("google_pay_merchant_id", fieldnames)
         self.assertIn("pago_movil_info", fieldnames)
+        self.assertIn("delivery_providers", fieldnames)
+        self.assertIn("notify_order_email", fieldnames)
+        self.assertIn("notify_whatsapp_number", fieldnames)
+
+    def test_delivery_providers_and_shipping_totals(self) -> None:
+        defaults = parse_delivery_providers("")
+        ids = [p["id"] for p in defaults]
+        self.assertIn("pickup", ids)
+        self.assertIn("mrw", ids)
+
+        custom = parse_delivery_providers('[{"id":"mrw_vip","label":"MRW Express","cost":8.5}]')
+        self.assertEqual(len(custom), 1)
+        self.assertEqual(custom[0]["cost"], 8.5)
+
+        pipe_parsed = parse_delivery_providers("MRW | 5.00 | Envío nacional\nRetiro | 0 | En tienda")
+        self.assertEqual(len(pipe_parsed), 2)
+        self.assertEqual(pipe_parsed[0]["cost"], 5.0)
+        self.assertFalse(pipe_parsed[1]["requires_address"])
+
+        mrw = resolve_delivery_provider("mrw", defaults)
+        self.assertEqual(mrw["id"], "mrw")
+
+        items = [{"item_code": "AUD-A88", "item_name": "Audífonos", "qty": 1, "rate": 100.0}]
+        totals = calculate_storefront_totals(items, payment_method="cashea", shipping_cost=5.0)
+        self.assertEqual(totals["shipping_cost"], 5.0)
+        self.assertEqual(totals["grand_total"], 121.0)
+        self.assertEqual(totals["cashea"]["down_payment_usd"], 48.4)
+
+    def test_whatsapp_link_and_order_notification_payload(self) -> None:
+        self.assertEqual(build_whatsapp_link("0412-1234567"), "https://wa.me/584121234567")
+        notif = build_order_notification_payload(
+            order_id="SAL-ORD-0001",
+            customer_name="Carlos Ruiz",
+            customer_email="carlos@example.com",
+            customer_phone="04141234567",
+            address="Agencia MRW Altamira",
+            delivery_label="MRW (Envío Nacional)",
+            delivery_cost=5.0,
+            payment_method="pago_movil",
+            payment_reference="998877",
+            items=[{"item_code": "AUD-1", "item_name": "Audífono", "qty": 2, "rate": 15.0}],
+            grand_total=35.0,
+        )
+        self.assertIn("SAL-ORD-0001", notif["subject"])
+        self.assertIn("MRW (Envío Nacional)", notif["text"])
+        self.assertIn("wa.me/584141234567", notif["customer_whatsapp_url"])
+        self.assertIn("carlos@example.com", notif["html"])
 
 
 if __name__ == "__main__":

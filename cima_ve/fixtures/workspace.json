@@ -1,7 +1,7 @@
 [
  {
   "charts": [],
-  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Portal de Vendedores — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Iniciar Facturación\",\"col\":4}},{\"id\":\"cima-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Inventario y Precios\",\"col\":4}},{\"id\":\"cima-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":4}}]",
+  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Portal de Vendedores — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Venta Rápida (Nota de Entrega)\",\"col\":3}},{\"id\":\"cima-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}}]",
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 1,
@@ -27,15 +27,22 @@
    {
     "color": "Green",
     "doc_view": "List",
-    "label": "Iniciar Facturación",
+    "label": "Venta Rápida (Nota de Entrega)",
     "link_to": "venta-rapida",
+    "type": "Page"
+   },
+   {
+    "color": "Yellow",
+    "doc_view": "List",
+    "label": "Notas de Entrega",
+    "link_to": "notas-entrega",
     "type": "Page"
    },
    {
     "color": "Blue",
     "doc_view": "List",
-    "label": "Inventario y Precios",
-    "link_to": "venta-rapida",
+    "label": "Clientes y Consumo",
+    "link_to": "clientes-consumo",
     "type": "Page"
    },
    {

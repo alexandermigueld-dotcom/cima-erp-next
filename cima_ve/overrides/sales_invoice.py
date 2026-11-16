@@ -39,6 +39,8 @@ def on_submit_fiscal_stamp(doc, method=None) -> None:
     import frappe
     from cima_ve.api.fiscal import stamp_sales_invoice
 
+    if getattr(doc.flags, "ignore_fiscal_stamp", False):
+        return
     settings = frappe.get_single("Cima VE Settings")
     if not settings.fiscal_enabled:
         return
