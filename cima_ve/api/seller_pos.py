@@ -5,6 +5,7 @@ import json
 from cima_ve.api._compat import whitelist
 from cima_ve.services.seller_pos_service import (
     build_seller_invoice_summary,
+    compute_custom_price_breakdown,
     validate_quick_invoice_input,
 )
 
@@ -335,6 +336,11 @@ def preview_cart_pricing(
         }
 
     validated = validate_quick_invoice_input(customer or "PREVIEW", parsed_items)
+    custom_price_map: dict[str, float] = {}
+    for raw_row in parsed_items:
+        code = str(raw_row.get("item_code") or "").strip()
+        if code and raw_row.get("is_custom_price") and raw_row.get("rate") is not None:
+            custom_price_map[code] = max(float(raw_row.get("rate") or 0.0), 0.0)
     apply_igtf_flag = bool(int(apply_igtf)) if isinstance(apply_igtf, (int, str)) else bool(apply_igtf)
     default_company, currency = _resolve_company_and_currency(price_list)
     iva_rate, igtf_rate = _get_fiscal_rates()
@@ -368,17 +374,29 @@ def preview_cart_pricing(
             qty = float(row.qty or 0)
             rate = float(row.rate or 0)
             price_list_rate = float(row.price_list_rate or rate)
+            disc_pct = float(row.discount_percentage or 0)
+            disc_amt = float(row.discount_amount or 0)
+            is_custom = row.item_code in custom_price_map
+            if is_custom:
+                bd = compute_custom_price_breakdown(price_list_rate, custom_price_map[row.item_code])
+                rate = bd["rate"]
+                price_list_rate = bd["price_list_rate"]
+                disc_pct = bd["discount_percentage"]
+                disc_amt = bd["discount_amount"]
+            has_discount = bool(disc_pct > 0 or disc_amt > 0 or (price_list_rate > 0 and rate < price_list_rate - 0.0001))
             priced_items.append(
                 {
                     "item_code": row.item_code,
                     "item_name": row.item_name or row.item_code,
                     "qty": qty,
                     "price_list_rate": price_list_rate,
-                    "discount_percentage": float(row.discount_percentage or 0),
-                    "discount_amount": float(row.discount_amount or 0),
+                    "discount_percentage": disc_pct,
+                    "discount_amount": disc_amt,
                     "rate": rate,
                     "amount": round(qty * rate, 2),
-                    "pricing_rules": getattr(row, "pricing_rules", None) or "",
+                    "pricing_rules": "" if is_custom else (getattr(row, "pricing_rules", None) or ""),
+                    "is_custom_price": is_custom,
+                    "has_discount": has_discount,
                 }
             )
     else:
@@ -402,17 +420,29 @@ def preview_cart_pricing(
             )
             rate = float(details.get("rate") if details.get("rate") is not None else row.unit_price)
             price_list_rate = float(details.get("price_list_rate") or rate)
+            disc_pct = float(details.get("discount_percentage") or 0)
+            disc_amt = float(details.get("discount_amount") or 0)
+            is_custom = row.item_code in custom_price_map
+            if is_custom:
+                bd = compute_custom_price_breakdown(price_list_rate, custom_price_map[row.item_code])
+                rate = bd["rate"]
+                price_list_rate = bd["price_list_rate"]
+                disc_pct = bd["discount_percentage"]
+                disc_amt = bd["discount_amount"]
+            has_discount = bool(disc_pct > 0 or disc_amt > 0 or (price_list_rate > 0 and rate < price_list_rate - 0.0001))
             priced_items.append(
                 {
                     "item_code": row.item_code,
                     "item_name": details.get("item_name") or row.description,
                     "qty": row.qty,
                     "price_list_rate": price_list_rate,
-                    "discount_percentage": float(details.get("discount_percentage") or 0),
-                    "discount_amount": float(details.get("discount_amount") or 0),
+                    "discount_percentage": disc_pct,
+                    "discount_amount": disc_amt,
                     "rate": rate,
                     "amount": round(row.qty * rate, 2),
-                    "pricing_rules": details.get("pricing_rules") or "",
+                    "pricing_rules": "" if is_custom else (details.get("pricing_rules") or ""),
+                    "is_custom_price": is_custom,
+                    "has_discount": has_discount,
                 }
             )
 

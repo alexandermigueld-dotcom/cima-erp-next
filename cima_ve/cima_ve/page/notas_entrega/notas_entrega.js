@@ -199,10 +199,21 @@ class CimaNotasEntrega {
 			notes
 				.map((n) => {
 					const itemsText = (n.items || [])
-						.slice(0, 3)
-						.map((it) => `${Number(it.qty)}x ${frappe.utils.escape_html(it.item_name || it.item_code)}`)
+						.slice(0, 4)
+						.map((it) => {
+							const orig = Number(it.price_list_rate || 0);
+							const rate = Number(it.rate || 0);
+							const hasDisc = Boolean(it.has_discount || Number(it.discount_percentage || 0) > 0 || (orig > 0 && rate < orig - 0.0001));
+							const discHtml = hasDisc
+								? ` <del class="text-muted">$${orig.toFixed(2)}</del> <strong>$${rate.toFixed(2)}</strong> <span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Descuento</span>`
+								: ` <span class="text-muted">($${rate.toFixed(2)})</span>`;
+							return `${Number(it.qty)}x ${frappe.utils.escape_html(it.item_name || it.item_code)}${discHtml}`;
+						})
 						.join("<br>");
-					const moreItems = (n.items || []).length > 3 ? `<div class="text-muted small">+${n.items.length - 3} más</div>` : "";
+					const moreItems = (n.items || []).length > 4 ? `<div class="text-muted small">+${n.items.length - 4} más</div>` : "";
+					const noteDiscountBadge = n.has_discount
+						? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Con descuento (${Number(n.discounted_items_count || 1)})</span></div>`
+						: "";
 					const badgeClass =
 						n.ve_ne_estado === "Pagada"
 							? "cima-ne-badge-pagada"
@@ -250,7 +261,7 @@ class CimaNotasEntrega {
 							<td>${frappe.utils.escape_html(n.posting_date || "")}</td>
 							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}</td>
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
-							<td class="small">${itemsText}${moreItems}</td>
+							<td class="small">${itemsText}${moreItems}${noteDiscountBadge}</td>
 							<td class="text-right font-weight-bold">$${Number(n.amount || 0).toFixed(2)}</td>
 							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
 							<td>${resolutionHtml}</td>

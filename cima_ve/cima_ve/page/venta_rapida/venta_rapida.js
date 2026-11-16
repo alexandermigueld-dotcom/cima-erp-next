@@ -293,6 +293,21 @@ class CimaSellerPortal {
 			}
 		});
 
+		root.on("click", "[data-add-custom-price]", (e) => {
+			const code = $(e.currentTarget).attr("data-add-custom-price");
+			const item = this.state.inventoryItems.find((r) => r.item_code === code);
+			if (item) {
+				this.addItemToCart(item);
+				this.switchTab("facturar");
+				this.openCustomPriceDialog(code);
+			}
+		});
+
+		root.on("click", "[data-edit-price]", (e) => {
+			const code = $(e.currentTarget).attr("data-edit-price");
+			this.openCustomPriceDialog(code);
+		});
+
 		root.on("click", "[data-qty-delta]", (e) => {
 			const code = $(e.currentTarget).attr("data-item-code");
 			const delta = parseFloat($(e.currentTarget).attr("data-qty-delta"));
@@ -445,19 +460,25 @@ class CimaSellerPortal {
 		const html = this.state.inventoryItems
 			.map((item) => {
 				const price = Number(item.price || 0).toFixed(2);
+				const codeEsc = frappe.utils.escape_html(item.item_code);
 				return `
 					<div class="cima-product-row">
 						<div>
 							<div><strong>${frappe.utils.escape_html(item.item_name)}</strong></div>
 							<div class="text-muted small">
-								${frappe.utils.escape_html(item.item_code)} · ${this.stockBadge(item.stock_qty)}
+								${codeEsc} · ${this.stockBadge(item.stock_qty)}
 							</div>
 						</div>
 						<div class="text-right">
 							<div class="font-weight-bold mb-1">${frappe.utils.escape_html(item.currency || "USD")} ${price}</div>
-							<button type="button" class="btn btn-xs btn-primary" data-add-item="${frappe.utils.escape_html(item.item_code)}">
-								+ Agregar
-							</button>
+							<div class="d-flex justify-content-end" style="gap: 6px;">
+								<button type="button" class="btn btn-xs btn-default" data-add-custom-price="${codeEsc}" title="Agregar con precio personalizado">
+									Precio
+								</button>
+								<button type="button" class="btn btn-xs btn-primary" data-add-item="${codeEsc}">
+									+ Agregar
+								</button>
+							</div>
 						</div>
 					</div>
 				`;
@@ -507,6 +528,7 @@ class CimaSellerPortal {
 				discount_percentage: 0,
 				discount_amount: 0,
 				rate: Number(item.price || 0),
+				is_custom_price: false,
 				currency: item.currency || "USD",
 			});
 		}
@@ -583,9 +605,21 @@ class CimaSellerPortal {
 					const local = this.state.cart.find((c) => c.item_code === p.item_code);
 					if (local) {
 						local.price_list_rate = Number(p.price_list_rate ?? p.rate ?? local.rate);
-						local.discount_percentage = Number(p.discount_percentage || 0);
-						local.discount_amount = Number(p.discount_amount || 0);
-						local.rate = Number(p.rate ?? local.rate);
+						if (!local.is_custom_price) {
+							local.discount_percentage = Number(p.discount_percentage || 0);
+							local.discount_amount = Number(p.discount_amount || 0);
+							local.rate = Number(p.rate ?? local.rate);
+						} else {
+							const orig = Number(local.price_list_rate || 0);
+							const cur = Number(local.rate || 0);
+							if (orig > 0 && cur < orig - 0.0001) {
+								local.discount_amount = Number((orig - cur).toFixed(4));
+								local.discount_percentage = Number((((orig - cur) / orig) * 100).toFixed(2));
+							} else {
+								local.discount_amount = 0;
+								local.discount_percentage = 0;
+							}
+						}
 					}
 				}
 				const isEditingQty = $(document.activeElement).is("[data-qty-input]");
@@ -632,6 +666,7 @@ class CimaSellerPortal {
 							<div class="text-muted small" data-item-price="${codeEsc}">${this.formatRowPriceHtml(row)}</div>
 						</div>
 						<div class="d-flex align-items-center" style="gap: 6px;">
+							<button type="button" class="btn btn-xs btn-default cima-btn-edit-price" data-edit-price="${codeEsc}" title="Cambiar precio">Precio</button>
 							<button type="button" class="btn btn-xs btn-default" data-item-code="${codeEsc}" data-qty-delta="-1">-</button>
 							<input type="number" class="form-control input-sm cima-qty-input" data-qty-input="${codeEsc}" value="${row.qty}" min="1" step="1" />
 							<button type="button" class="btn btn-xs btn-default" data-item-code="${codeEsc}" data-qty-delta="1">+</button>
@@ -654,6 +689,91 @@ class CimaSellerPortal {
 			<div class="cima-summary-line"><span>Subtotal:</span><strong>${base.toFixed(2)}</strong></div>
 			<div class="cima-summary-total"><span>TOTAL:</span><span>${base.toFixed(2)}</span></div>
 		`);
+	}
+
+	openCustomPriceDialog(code) {
+		const row = this.state.cart.find((c) => c.item_code === code);
+		if (!row) return;
+		const origPrice = Number(row.price_list_rate || row.rate || 0);
+		const curPrice = Number(row.rate || 0);
+		const currency = row.currency || "USD";
+
+		const d = new frappe.ui.Dialog({
+			title: `Precio Personalizado — ${row.item_name || row.item_code}`,
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "info_html",
+					options: `<div class="mb-2 text-muted small">Precio original de lista: <strong>${frappe.utils.escape_html(currency)} ${origPrice.toFixed(2)}</strong></div>`,
+				},
+				{
+					label: `Nuevo precio unitario (${currency})`,
+					fieldname: "custom_rate",
+					fieldtype: "Float",
+					reqd: 1,
+					default: curPrice,
+				},
+				{
+					fieldtype: "HTML",
+					fieldname: "preview_html",
+					options: `<div class="cima-custom-price-preview small"></div>`,
+				},
+			],
+			primary_action_label: "Aplicar Precio",
+			primary_action: (values) => {
+				const newRate = Number(values.custom_rate);
+				if (isNaN(newRate) || newRate < 0) {
+					frappe.msgprint("Ingresa un precio válido mayor o igual a 0.");
+					return;
+				}
+				row.rate = Number(newRate.toFixed(4));
+				row.is_custom_price = true;
+				if (origPrice > 0 && row.rate < origPrice - 0.0001) {
+					row.discount_amount = Number((origPrice - row.rate).toFixed(4));
+					row.discount_percentage = Number((((origPrice - row.rate) / origPrice) * 100).toFixed(2));
+				} else {
+					row.discount_amount = 0;
+					row.discount_percentage = 0;
+				}
+				d.hide();
+				this.renderCart();
+				this.refreshCartPricing();
+			},
+			secondary_action_label: row.is_custom_price ? "Restaurar precio original" : undefined,
+			secondary_action: () => {
+				row.is_custom_price = false;
+				row.rate = origPrice;
+				row.discount_amount = 0;
+				row.discount_percentage = 0;
+				d.hide();
+				this.renderCart();
+				this.refreshCartPricing();
+			},
+		});
+
+		const updatePreview = () => {
+			const val = parseFloat(d.get_value("custom_rate"));
+			const box = d.$wrapper.find(".cima-custom-price-preview");
+			if (isNaN(val) || val < 0) {
+				box.html(`<span class="text-danger">Ingresa un monto válido.</span>`);
+				return;
+			}
+			if (origPrice > 0 && val < origPrice - 0.0001) {
+				const diff = origPrice - val;
+				const pct = (diff / origPrice) * 100;
+				box.html(`<span class="cima-discount-badge">Descuento: -${currency} ${diff.toFixed(2)} (-${pct.toFixed(pct % 1 === 0 ? 0 : 1)}%)</span>`);
+			} else if (origPrice > 0 && val > origPrice + 0.0001) {
+				box.html(`<span class="text-muted">Precio personalizado (+${currency} ${(val - origPrice).toFixed(2)} sobre lista)</span>`);
+			} else {
+				box.html(`<span class="text-muted">Igual al precio original de lista.</span>`);
+			}
+		};
+
+		d.show();
+		updatePreview();
+		const inputEl = d.$wrapper.find("input[data-fieldname='custom_rate']");
+		inputEl.on("input change", updatePreview);
+		setTimeout(() => inputEl.focus().select(), 80);
 	}
 
 	openNewCustomerDialog() {
@@ -736,6 +856,12 @@ class CimaSellerPortal {
 		const adminLink = this.isAdmin()
 			? ` · <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>`
 			: "";
+		const discItems = res.discounted_items || [];
+		const discountLine = discItems.length
+			? `<div class="small mt-1" style="color:#92400e;"><strong>Descuentos aplicados:</strong> ${discItems
+					.map((d) => `${frappe.utils.escape_html(d.item_name || d.item_code)} ($${Number(d.price_list_rate).toFixed(2)} → $${Number(d.rate).toFixed(2)})`)
+					.join(", ")}</div>`
+			: "";
 		box.html(`
 			<div class="cima-result-banner">
 				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
@@ -743,6 +869,7 @@ class CimaSellerPortal {
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)} ·
 					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${adminLink}
 				</div>
+				${discountLine}
 			</div>
 		`);
 	}

@@ -7,7 +7,10 @@ from cima_ve.services.delivery_note_service import (
     compute_delivery_note_settlement_totals,
     summarize_delivery_notes,
 )
-from cima_ve.services.seller_pos_service import validate_quick_invoice_input
+from cima_ve.services.seller_pos_service import (
+    compute_custom_price_breakdown,
+    validate_quick_invoice_input,
+)
 
 
 def _get_tax_rates() -> tuple[float, float]:
@@ -57,16 +60,25 @@ def create_quick_delivery_note(
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
     validated = validate_quick_invoice_input(customer, parsed_items)
+    custom_price_map: dict[str, float] = {}
+    for raw_row in parsed_items:
+        code = str(raw_row.get("item_code") or "").strip()
+        if code and raw_row.get("is_custom_price") and raw_row.get("rate") is not None:
+            custom_price_map[code] = max(float(raw_row.get("rate") or 0.0), 0.0)
+
     company, currency = _resolve_company_and_currency(price_list)
 
     dn_items = []
     for row in validated:
-        item_dict = {
+        item_dict: dict = {
             "item_code": row.item_code,
             "qty": row.qty,
         }
         if warehouse:
             item_dict["warehouse"] = warehouse
+        if row.item_code in custom_price_map:
+            item_dict["rate"] = custom_price_map[row.item_code]
+            item_dict["ignore_pricing_rule"] = 1
         dn_items.append(item_dict)
 
     seller_user = frappe.session.user
@@ -89,6 +101,47 @@ def create_quick_delivery_note(
         }
     )
     _apply_required_sales_metadata(doc, sales_channel=sales_channel, sales_person=sales_person)
+    doc.run_method("set_missing_values")
+
+    if custom_price_map:
+        for item_doc in doc.items:
+            if item_doc.item_code in custom_price_map:
+                custom_rate = custom_price_map[item_doc.item_code]
+                orig_rate = float(getattr(item_doc, "price_list_rate", 0) or 0)
+                bd = compute_custom_price_breakdown(orig_rate, custom_rate)
+                item_doc.rate = bd["rate"]
+                item_doc.discount_amount = bd["discount_amount"]
+                item_doc.discount_percentage = bd["discount_percentage"]
+                if item_doc.meta.has_field("ignore_pricing_rule"):
+                    item_doc.ignore_pricing_rule = 1
+
+    doc.run_method("calculate_taxes_and_totals")
+
+    discounted_items: list[dict] = []
+    for item_doc in doc.items:
+        orig_rate = float(getattr(item_doc, "price_list_rate", 0) or 0)
+        final_rate = float(getattr(item_doc, "rate", 0) or 0)
+        disc_pct = float(getattr(item_doc, "discount_percentage", 0) or 0)
+        disc_amt = float(getattr(item_doc, "discount_amount", 0) or 0)
+        if disc_pct > 0 or disc_amt > 0 or (orig_rate > 0 and final_rate < orig_rate - 0.0001):
+            discounted_items.append(
+                {
+                    "item_code": item_doc.item_code,
+                    "item_name": item_doc.item_name or item_doc.item_code,
+                    "price_list_rate": orig_rate,
+                    "rate": final_rate,
+                    "discount_percentage": disc_pct,
+                    "discount_amount": disc_amt,
+                }
+            )
+
+    if discounted_items:
+        disc_summary = "; ".join(
+            f"{d['item_code']} (${d['price_list_rate']:.2f} -> ${d['rate']:.2f})"
+            for d in discounted_items
+        )
+        doc.remarks = f"{doc.remarks} | Descuento en: {disc_summary}".strip(" |")
+
     doc.insert()
     doc.submit()
     doc.reload()
@@ -100,6 +153,8 @@ def create_quick_delivery_note(
         "currency": doc.currency,
         "net_total": float(doc.net_total or 0),
         "grand_total": float(doc.grand_total or 0),
+        "has_discount": bool(discounted_items),
+        "discounted_items": discounted_items,
         "seller": {
             "user": getattr(doc, "ve_vendedor_usuario", None) or seller_user,
             "fullname": getattr(doc, "ve_vendedor_nombre", None) or seller_name,
@@ -195,14 +250,33 @@ def get_delivery_notes(
         dn_items = frappe.get_all(
             "Delivery Note Item",
             filters={"parent": ["in", dn_names]},
-            fields=["parent", "item_code", "item_name", "qty", "rate", "amount"],
+            fields=[
+                "parent",
+                "item_code",
+                "item_name",
+                "qty",
+                "price_list_rate",
+                "rate",
+                "discount_percentage",
+                "discount_amount",
+                "amount",
+            ],
             limit_page_length=3000,
         )
         for it in dn_items:
+            orig_rate = float(it.get("price_list_rate") or 0)
+            final_rate = float(it.get("rate") or 0)
+            disc_pct = float(it.get("discount_percentage") or 0)
+            disc_amt = float(it.get("discount_amount") or 0)
+            it["has_discount"] = bool(
+                disc_pct > 0 or disc_amt > 0 or (orig_rate > 0 and final_rate < orig_rate - 0.0001)
+            )
             items_by_dn.setdefault(it["parent"], []).append(it)
 
     for r in rows:
         r["items"] = items_by_dn.get(r["name"], [])
+        r["has_discount"] = any(it.get("has_discount") for it in r["items"])
+        r["discounted_items_count"] = sum(1 for it in r["items"] if it.get("has_discount"))
         if not r.get("seller_name") and r.get("seller_user"):
             r["seller_name"] = frappe.utils.get_fullname(r["seller_user"]) or r["seller_user"]
 

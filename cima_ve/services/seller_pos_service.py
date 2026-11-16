@@ -83,6 +83,31 @@ def validate_quick_invoice_input(customer: str, items: list[dict]) -> list[Fisca
     return parsed
 
 
+def compute_custom_price_breakdown(list_rate: float, custom_rate: float) -> dict:
+    """Calcula descuento si el precio personalizado es menor al precio original de lista."""
+    orig = round(max(float(list_rate or 0.0), 0.0), 4)
+    rate = round(max(float(custom_rate or 0.0), 0.0), 4)
+    if orig > 0 and rate < orig - 0.0001:
+        disc_amt = round(orig - rate, 4)
+        disc_pct = round((disc_amt / orig) * 100.0, 2)
+        return {
+            "price_list_rate": orig,
+            "rate": rate,
+            "discount_amount": disc_amt,
+            "discount_percentage": disc_pct,
+            "has_discount": True,
+            "price_changed": True,
+        }
+    return {
+        "price_list_rate": orig,
+        "rate": rate,
+        "discount_amount": 0.0,
+        "discount_percentage": 0.0,
+        "has_discount": False,
+        "price_changed": orig > 0 and abs(rate - orig) > 0.0001,
+    }
+
+
 def build_seller_invoice_summary(
     items: list[dict],
     apply_igtf: bool = False,

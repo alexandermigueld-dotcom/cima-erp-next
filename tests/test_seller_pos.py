@@ -4,6 +4,7 @@ import unittest
 
 from cima_ve.services.seller_pos_service import (
     build_seller_invoice_summary,
+    compute_custom_price_breakdown,
     filter_inventory_items,
     validate_quick_invoice_input,
 )
@@ -62,6 +63,25 @@ class SellerPosServiceTests(unittest.TestCase):
         self.assertEqual(parsed[0].qty, 100.0)
         self.assertEqual(parsed[0].unit_price, 0.0)
 
+    def test_compute_custom_price_breakdown(self) -> None:
+        discounted = compute_custom_price_breakdown(3.0, 2.8)
+        self.assertTrue(discounted["has_discount"])
+        self.assertTrue(discounted["price_changed"])
+        self.assertEqual(discounted["price_list_rate"], 3.0)
+        self.assertEqual(discounted["rate"], 2.8)
+        self.assertAlmostEqual(discounted["discount_amount"], 0.2, places=4)
+        self.assertAlmostEqual(discounted["discount_percentage"], 6.67, places=2)
+
+        increased = compute_custom_price_breakdown(3.0, 3.5)
+        self.assertFalse(increased["has_discount"])
+        self.assertTrue(increased["price_changed"])
+        self.assertEqual(increased["discount_amount"], 0.0)
+        self.assertEqual(increased["discount_percentage"], 0.0)
+
+        same = compute_custom_price_breakdown(3.0, 3.0)
+        self.assertFalse(same["has_discount"])
+        self.assertFalse(same["price_changed"])
+
     def test_build_seller_invoice_summary_with_igtf(self) -> None:
         summary = build_seller_invoice_summary(
             [
@@ -111,8 +131,19 @@ class SellerPosServiceTests(unittest.TestCase):
         self.assertIn("ve_vendedor_usuario", seller_pos_py)
         self.assertIn("is_admin", seller_pos_py)
         self.assertIn("cima-logged-seller-badge", js_text)
-        self.assertIn('data-admin-only="1"', js_text)
+        self.assertIn("data-admin-only=\"1\"", js_text)
         self.assertIn("isAdmin()", js_text)
+        self.assertIn("data-add-custom-price", js_text)
+        self.assertIn("data-edit-price", js_text)
+        self.assertIn("openCustomPriceDialog", js_text)
+
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        self.assertIn("has_discount", ne_js)
+        self.assertIn("Con descuento", ne_js)
+
+        dn_py = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+        self.assertIn("discounted_items", dn_py)
+        self.assertIn("price_list_rate", dn_py)
 
         for admin_page in ("metricas_ventas", "clientes_consumo", "notas_entrega"):
             p_json = root / "cima_ve" / "cima_ve" / "page" / admin_page / f"{admin_page}.json"
