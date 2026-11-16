@@ -1,13 +1,13 @@
 [
  {
   "charts": [],
-  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Facturación Rápida — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Venta Rápida (Nota de Entrega)\",\"col\":6}}]",
+  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Facturación Rápida</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Venta Rápida (Nota de Entrega)\",\"col\":6}}]",
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 1,
   "icon": "sell",
   "is_hidden": 0,
-  "label": "Facturación Cima",
+  "label": "Facturación Rápida",
   "links": [],
   "module": "Cima VE",
   "name": "Facturación Cima",
@@ -32,7 +32,7 @@
     "type": "Page"
    }
   ],
-  "title": "Facturación Cima",
+  "title": "Facturación Rápida",
   "type": "Workspace"
  },
  {

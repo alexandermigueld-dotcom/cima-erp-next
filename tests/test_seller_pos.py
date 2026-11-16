@@ -89,8 +89,11 @@ class SellerPosServiceTests(unittest.TestCase):
         self.assertIn("data-qty-input", js_text)
         self.assertIn("preview_cart_pricing", js_text)
         self.assertIn("cima-sales-channel", js_text)
-        self.assertIn("cima-sales-person", js_text)
+        self.assertNotIn("cima-sales-person", js_text)
+        self.assertNotIn("cima-payment-method", js_text)
+        self.assertNotIn("cima-apply-igtf", js_text)
         self.assertIn("e.target.select()", js_text)
+        self.assertEqual(page_data["title"], "Facturación Rápida")
 
         seller_pos_py = (root / "cima_ve" / "api" / "seller_pos.py").read_text(encoding="utf-8")
         storefront_py = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
@@ -99,7 +102,7 @@ class SellerPosServiceTests(unittest.TestCase):
 
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
         self.assertEqual(len(ws_data), 2)
-        self.assertEqual(ws_data[0]["label"], "Facturación Cima")
+        self.assertEqual(ws_data[0]["label"], "Facturación Rápida")
         self.assertEqual(len(ws_data[0]["shortcuts"]), 1)
         self.assertEqual(ws_data[0]["shortcuts"][0]["link_to"], "venta-rapida")
         self.assertEqual(ws_data[1]["label"], "Administración Cima")

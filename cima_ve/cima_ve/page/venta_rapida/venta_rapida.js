@@ -1,7 +1,7 @@
 frappe.pages["venta-rapida"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Portal de Vendedores",
+		title: "Facturación Rápida",
 		single_column: true,
 	});
 
@@ -27,11 +27,8 @@ class CimaSellerPortal {
 			priceList: "",
 			warehouse: "",
 			salesChannel: "Detal",
-			salesPerson: "",
 			selectedCustomer: null,
 			cart: [],
-			paymentMethod: "Contado USD",
-			applyIgtf: false,
 			inventoryItems: [],
 			lastInvoiceResult: null,
 		};
@@ -60,8 +57,8 @@ class CimaSellerPortal {
 			<div class="cima-seller-shell">
 				<div class="cima-hero-bar">
 					<div class="cima-hero-title">
-						<h2>Facturación Rápida — Cima Electronic</h2>
-						<p>Interfaz simplificada para vendedores: factura en segundos o consulta stock y precios.</p>
+						<h2>Facturación Rápida</h2>
+						<p>Emite notas de entrega y consulta inventario y precios.</p>
 					</div>
 					<div class="cima-hero-actions">
 						<button type="button" class="cima-btn-start-invoice" data-action="start-invoice">
@@ -119,7 +116,7 @@ class CimaSellerPortal {
 
 						<div class="cima-card">
 							<div class="cima-card-title">
-								<span>2. Resumen de Factura</span>
+								<span>2. Resumen de Nota de Entrega</span>
 								<button type="button" class="btn btn-xs btn-default" data-action="clear-cart">
 									Limpiar
 								</button>
@@ -132,47 +129,19 @@ class CimaSellerPortal {
 								</div>
 							</div>
 
-							<div class="cima-search-row mt-3">
-								<div class="form-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
-									<label class="control-label">Canal de Venta</label>
-									<select id="cima-sales-channel" class="form-control"></select>
-								</div>
-								<div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
-									<label class="control-label">Vendedor</label>
-									<select id="cima-sales-person" class="form-control"></select>
-								</div>
-							</div>
-
 							<div class="form-group mt-3">
-								<label class="control-label">Método de Pago</label>
-								<select id="cima-payment-method" class="form-control">
-									<option value="Contado USD">Contado USD (Efectivo / Zelle)</option>
-									<option value="Pago Móvil / Bs">Pago Móvil / Transferencia Bs</option>
-									<option value="Cashea">Cashea (Inicial + Cuotas)</option>
-									<option value="Punto de Venta">Punto de Venta</option>
-								</select>
-							</div>
-
-							<div class="checkbox">
-								<label>
-									<input type="checkbox" id="cima-apply-igtf" />
-									Aplicar IGTF 3% (pago en divisas)
-								</label>
+								<label class="control-label">Canal de Venta</label>
+								<select id="cima-sales-channel" class="form-control"></select>
 							</div>
 
 							<div class="cima-summary-box" id="cima-tax-summary">
-								<div class="cima-summary-line"><span>Base Imponible:</span><strong>$0.00</strong></div>
-								<div class="cima-summary-line"><span>IVA (16%):</span><strong>$0.00</strong></div>
-								<div class="cima-summary-line"><span>IGTF (3%):</span><strong>$0.00</strong></div>
-								<div class="cima-summary-total"><span>TOTAL:</span><span>$0.00</span></div>
+								<div class="cima-summary-line"><span>Subtotal:</span><strong>0.00</strong></div>
+								<div class="cima-summary-total"><span>TOTAL:</span><span>0.00</span></div>
 							</div>
 
 							<button type="button" id="cima-btn-emit" class="cima-btn-emit" disabled>
 								EMITIR NOTA DE ENTREGA
 							</button>
-							<div class="text-muted small text-center mt-2">
-								Descuenta inventario y queda pendiente por cobrar en Notas de Entrega.
-							</div>
 						</div>
 					</div>
 				</div>
@@ -315,23 +284,6 @@ class CimaSellerPortal {
 			this.state.salesChannel = $(e.target).val();
 		});
 
-		root.on("change", "#cima-sales-person", (e) => {
-			this.state.salesPerson = $(e.target).val();
-		});
-
-		root.on("change", "#cima-payment-method", (e) => {
-			this.state.paymentMethod = $(e.target).val();
-			const isUsdCash = this.state.paymentMethod === "Contado USD";
-			this.state.applyIgtf = isUsdCash;
-			root.find("#cima-apply-igtf").prop("checked", isUsdCash);
-			this.renderCart();
-		});
-
-		root.on("change", "#cima-apply-igtf", (e) => {
-			this.state.applyIgtf = $(e.target).is(":checked");
-			this.renderCart();
-		});
-
 		root.on("click", "[data-add-item]", (e) => {
 			const code = $(e.currentTarget).attr("data-add-item");
 			const item = this.state.inventoryItems.find((r) => r.item_code === code);
@@ -406,7 +358,6 @@ class CimaSellerPortal {
 				this.state.priceList = r.message.default_price_list || "";
 				this.state.warehouse = r.message.default_warehouse || "";
 				this.state.salesChannel = r.message.default_sales_channel || "Detal";
-				this.state.salesPerson = r.message.default_sales_person || "";
 
 				const plOptions = (r.message.price_lists || [])
 					.map((pl) => `<option value="${frappe.utils.escape_html(pl.name)}">${frappe.utils.escape_html(pl.name)} (${pl.currency})</option>`)
@@ -422,21 +373,14 @@ class CimaSellerPortal {
 				const chOptions = chList
 					.map((ch) => `<option value="${frappe.utils.escape_html(ch)}">${frappe.utils.escape_html(ch)}</option>`)
 					.join("");
-				const spOptions =
-					`<option value="">-- Automático --</option>` +
-					(r.message.sales_persons || [])
-						.map((sp) => `<option value="${frappe.utils.escape_html(sp)}">${frappe.utils.escape_html(sp)}</option>`)
-						.join("");
 
 				this.wrapper.find("#cima-price-list, #cima-inv-price-list").html(plOptions).val(this.state.priceList);
 				this.wrapper.find("#cima-warehouse, #cima-inv-warehouse").html(whOptions).val(this.state.warehouse);
 				this.wrapper.find("#cima-sales-channel").html(chOptions).val(this.state.salesChannel);
-				this.wrapper.find("#cima-sales-person").html(spOptions).val(this.state.salesPerson);
 
 				const sellerFull = r.message.current_user_fullname || frappe.session.user_fullname || frappe.session.user;
-				const sellerUser = r.message.current_user || frappe.session.user;
 				this.wrapper.find("#cima-logged-seller-badge").html(
-					`Responsable: <strong>${frappe.utils.escape_html(sellerFull)}</strong> (${frappe.utils.escape_html(sellerUser)})`
+					`Vendedor: <strong>${frappe.utils.escape_html(sellerFull)}</strong>`
 				);
 
 				this.loadCustomers("");
@@ -630,7 +574,7 @@ class CimaSellerPortal {
 				customer: this.state.selectedCustomer || "",
 				price_list: this.state.priceList || "",
 				warehouse: this.state.warehouse || "",
-				apply_igtf: this.state.applyIgtf ? 1 : 0,
+				apply_igtf: 0,
 			},
 			callback: (r) => {
 				if (seq !== this._pricingSeq || !r.message) return;
@@ -659,20 +603,11 @@ class CimaSellerPortal {
 
 	updateSummaryFromCart(summaryOverride = null) {
 		if (summaryOverride) {
-			this.renderSummary(
-				Number(summaryOverride.taxable_base || 0),
-				Number(summaryOverride.iva_amount || 0),
-				Number(summaryOverride.igtf_amount || 0),
-				Number(summaryOverride.grand_total || 0)
-			);
+			this.renderSummary(Number(summaryOverride.taxable_base || 0));
 			return;
 		}
 		const base = this.state.cart.reduce((acc, r) => acc + r.qty * r.rate, 0);
-		const iva = base * 0.16;
-		const subtotal = base + iva;
-		const igtf = this.state.applyIgtf ? subtotal * 0.03 : 0;
-		const total = subtotal + igtf;
-		this.renderSummary(base, iva, igtf, total);
+		this.renderSummary(base);
 	}
 
 	renderCart(summaryOverride = null) {
@@ -681,7 +616,7 @@ class CimaSellerPortal {
 
 		if (!this.state.cart.length) {
 			container.html(`<div class="text-muted text-center p-4">Agrega productos desde la izquierda para comenzar.</div>`);
-			this.renderSummary(0, 0, 0, 0);
+			this.renderSummary(0);
 			emitBtn.prop("disabled", true);
 			return;
 		}
@@ -714,12 +649,10 @@ class CimaSellerPortal {
 		emitBtn.prop("disabled", !this.state.selectedCustomer || !this.state.cart.length);
 	}
 
-	renderSummary(base, iva, igtf, total) {
+	renderSummary(base) {
 		this.wrapper.find("#cima-tax-summary").html(`
-			<div class="cima-summary-line"><span>Base Imponible:</span><strong>${base.toFixed(2)}</strong></div>
-			<div class="cima-summary-line"><span>IVA (16%):</span><strong>${iva.toFixed(2)}</strong></div>
-			<div class="cima-summary-line"><span>IGTF (3%):</span><strong>${igtf.toFixed(2)}</strong></div>
-			<div class="cima-summary-total"><span>TOTAL:</span><span>${total.toFixed(2)}</span></div>
+			<div class="cima-summary-line"><span>Subtotal:</span><strong>${base.toFixed(2)}</strong></div>
+			<div class="cima-summary-total"><span>TOTAL:</span><span>${base.toFixed(2)}</span></div>
 		`);
 	}
 
@@ -773,8 +706,6 @@ class CimaSellerPortal {
 				price_list: this.state.priceList,
 				warehouse: this.state.warehouse,
 				sales_channel: this.state.salesChannel,
-				sales_person: this.state.salesPerson,
-				notes: `Método sugerido: ${this.state.paymentMethod}`,
 			},
 			callback: (r) => {
 				btn.text("EMITIR NOTA DE ENTREGA");
@@ -800,17 +731,17 @@ class CimaSellerPortal {
 			return;
 		}
 		const seller = res.seller || {};
-		const sellerLabel = seller.fullname
-			? `${seller.fullname} (${seller.user || ""})`
-			: (seller.user || frappe.session.user || "");
+		const sellerLabel = seller.fullname || seller.user || frappe.session.user_fullname || frappe.session.user || "";
 		const docName = res.delivery_note || res.invoice_name || "";
+		const adminLink = this.isAdmin()
+			? ` · <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>`
+			: "";
 		box.html(`
 			<div class="cima-result-banner">
-				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Base: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
+				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
 				<div class="small mt-1">
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)} ·
-					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")} (Inventario descontado, pendiente por cobrar)
-					· <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>
+					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${adminLink}
 				</div>
 			</div>
 		`);

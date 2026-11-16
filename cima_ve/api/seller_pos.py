@@ -282,15 +282,31 @@ def _apply_required_sales_metadata(doc, sales_channel: str = "", sales_person: s
             sp_rows = frappe.get_all(
                 "Sales Person",
                 filters={"enabled": 1, "is_group": 0},
-                fields=["name"],
+                fields=["name", "employee"],
                 order_by="name asc",
                 limit_page_length=50,
             )
+            current_user = getattr(frappe.session, "user", None) or ""
+            if current_user:
+                matched_emp = frappe.db.get_value("Employee", {"user_id": current_user}, "name")
+                if matched_emp:
+                    chosen_sp = next(
+                        (r["name"] for r in sp_rows if r.get("employee") == matched_emp),
+                        "",
+                    )
+                if not chosen_sp:
+                    full_name = (frappe.utils.get_fullname(current_user) or "").strip().lower()
+                    if full_name:
+                        chosen_sp = next(
+                            (r["name"] for r in sp_rows if r["name"].strip().lower() == full_name),
+                            "",
+                        )
             sp_names = [r["name"] for r in sp_rows]
-            chosen_sp = next(
-                (n for n in sp_names if "tienda" in n.lower() or "mostrador" in n.lower()),
-                sp_names[0] if sp_names else "",
-            )
+            if not chosen_sp:
+                chosen_sp = next(
+                    (n for n in sp_names if "tienda" in n.lower() or "mostrador" in n.lower()),
+                    sp_names[0] if sp_names else "",
+                )
         if not chosen_sp:
             any_sp = frappe.get_all("Sales Person", fields=["name"], limit_page_length=1)
             chosen_sp = any_sp[0]["name"] if any_sp else ""
