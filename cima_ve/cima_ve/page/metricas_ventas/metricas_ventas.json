@@ -13,18 +13,6 @@
  "page_name": "metricas-ventas",
  "roles": [
   {
-   "role": "Sales User"
-  },
-  {
-   "role": "Sales Manager"
-  },
-  {
-   "role": "Accounts User"
-  },
-  {
-   "role": "Accounts Manager"
-  },
-  {
    "role": "System Manager"
   }
  ],

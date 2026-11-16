@@ -1,7 +1,7 @@
 [
  {
   "charts": [],
-  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Portal de Vendedores — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Venta Rápida (Nota de Entrega)\",\"col\":3}},{\"id\":\"cima-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}}]",
+  "content": "[{\"id\":\"cima-hdr-1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Facturación Rápida — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Venta Rápida (Nota de Entrega)\",\"col\":6}}]",
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 1,
@@ -30,7 +30,30 @@
     "label": "Venta Rápida (Nota de Entrega)",
     "link_to": "venta-rapida",
     "type": "Page"
-   },
+   }
+  ],
+  "title": "Facturación Cima",
+  "type": "Workspace"
+ },
+ {
+  "charts": [],
+  "content": "[{\"id\":\"cima-adm-hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Administración y Control — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-adm-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-adm-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-adm-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}},{\"id\":\"cima-adm-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Configuración Cima VE\",\"col\":3}}]",
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 1,
+  "icon": "setting",
+  "is_hidden": 0,
+  "label": "Administración Cima",
+  "links": [],
+  "module": "Cima VE",
+  "name": "Administración Cima",
+  "public": 1,
+  "roles": [
+   {
+    "role": "System Manager"
+   }
+  ],
+  "shortcuts": [
    {
     "color": "Yellow",
     "doc_view": "List",
@@ -51,9 +74,16 @@
     "label": "Métricas de Ventas",
     "link_to": "metricas-ventas",
     "type": "Page"
+   },
+   {
+    "color": "Grey",
+    "doc_view": "List",
+    "label": "Configuración Cima VE",
+    "link_to": "Cima VE Settings",
+    "type": "DocType"
    }
   ],
-  "title": "Facturación Cima",
+  "title": "Administración Cima",
   "type": "Workspace"
  }
 ]

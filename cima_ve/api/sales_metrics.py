@@ -16,6 +16,8 @@ def get_sales_metrics(
     """Devuelve métricas globales de ventas y desglose completo por usuario vendedor."""
     import frappe
 
+    frappe.only_for("System Manager")
+
     si_meta = frappe.get_meta("Sales Invoice")
     has_vendedor_user = si_meta.has_field("ve_vendedor_usuario")
     has_vendedor_name = si_meta.has_field("ve_vendedor_nombre")

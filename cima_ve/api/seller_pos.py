@@ -85,6 +85,7 @@ def get_seller_bootstrap() -> dict:
         "company": default_company,
         "current_user": current_user,
         "current_user_fullname": current_user_fullname,
+        "is_admin": "System Manager" in frappe.get_roles(current_user),
         "default_price_list": preferred_pl,
         "price_lists": price_lists,
         "warehouses": warehouses,

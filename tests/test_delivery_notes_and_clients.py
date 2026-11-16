@@ -107,11 +107,12 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("create_quick_delivery_note", vr_js)
         self.assertIn("EMITIR NOTA DE ENTREGA", vr_js)
 
-        shortcut_links = {s["link_to"] for s in ws[0]["shortcuts"]}
-        self.assertIn("notas-entrega", shortcut_links)
-        self.assertIn("clientes-consumo", shortcut_links)
-        self.assertIn("venta-rapida", shortcut_links)
-        self.assertIn("metricas-ventas", shortcut_links)
+        seller_links = {s["link_to"] for s in ws[0]["shortcuts"]}
+        admin_links = {s["link_to"] for s in ws[1]["shortcuts"]}
+        self.assertEqual(seller_links, {"venta-rapida"})
+        self.assertIn("notas-entrega", admin_links)
+        self.assertIn("clientes-consumo", admin_links)
+        self.assertIn("metricas-ventas", admin_links)
 
 
 if __name__ == "__main__":

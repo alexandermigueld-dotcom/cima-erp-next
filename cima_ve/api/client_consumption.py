@@ -14,6 +14,8 @@ def get_client_consumption(
     """Devuelve el consumo por cliente y cuánto ha comprado cada cliente a cada vendedor."""
     import frappe
 
+    frappe.only_for("System Manager")
+
     si_meta = frappe.get_meta("Sales Invoice")
     has_si_user = si_meta.has_field("ve_vendedor_usuario")
     has_si_name = si_meta.has_field("ve_vendedor_nombre")

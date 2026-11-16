@@ -118,6 +118,8 @@ def get_delivery_notes(
     """Lista todas las Notas de Entrega con su estado (Pendiente/Pagada/Cancelada), cliente, vendedor e ítems."""
     import frappe
 
+    frappe.only_for("System Manager")
+
     dn_meta = frappe.get_meta("Delivery Note")
     has_estado = dn_meta.has_field("ve_ne_estado")
     has_vendedor_user = dn_meta.has_field("ve_vendedor_usuario")
@@ -236,6 +238,8 @@ def cancel_delivery_note(delivery_note: str, reason: str = "") -> dict:
     import frappe
     from frappe.utils import now_datetime
 
+    frappe.only_for("System Manager")
+
     dn = frappe.get_doc("Delivery Note", delivery_note)
     if dn.docstatus == 2 or getattr(dn, "ve_ne_estado", "") == "Cancelada":
         frappe.throw("Esta Nota de Entrega ya está cancelada.")
@@ -276,6 +280,8 @@ def mark_delivery_note_paid(
     import frappe
     from frappe.utils import now_datetime, today
     from cima_ve.api.seller_pos import _apply_required_sales_metadata
+
+    frappe.only_for("System Manager")
 
     dn = frappe.get_doc("Delivery Note", delivery_note)
     if dn.docstatus != 1:

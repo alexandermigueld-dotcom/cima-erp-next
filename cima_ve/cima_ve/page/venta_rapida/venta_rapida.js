@@ -40,7 +40,19 @@ class CimaSellerPortal {
 
 		this.renderShell();
 		this.bindEvents();
+		this.syncAdminVisibility();
 		this.loadBootstrap();
+	}
+
+	isAdmin() {
+		return Boolean(
+			(this.state.bootstrap && this.state.bootstrap.is_admin) ||
+			(frappe.user && frappe.user.has_role && frappe.user.has_role("System Manager"))
+		);
+	}
+
+	syncAdminVisibility() {
+		this.wrapper.find("[data-admin-only='1']").toggle(this.isAdmin());
 	}
 
 	renderShell() {
@@ -58,13 +70,13 @@ class CimaSellerPortal {
 						<button type="button" class="cima-btn-inventory" data-action="tab-inventory">
 							Ver Inventario y Precios
 						</button>
-						<button type="button" class="cima-btn-inventory" data-action="open-delivery-notes">
+						<button type="button" class="cima-btn-inventory" data-action="open-delivery-notes" data-admin-only="1" style="display: none;">
 							Notas de Entrega
 						</button>
-						<button type="button" class="cima-btn-inventory" data-action="open-client-consumption">
+						<button type="button" class="cima-btn-inventory" data-action="open-client-consumption" data-admin-only="1" style="display: none;">
 							Clientes y Consumo
 						</button>
-						<button type="button" class="cima-btn-inventory" data-action="open-metrics">
+						<button type="button" class="cima-btn-inventory" data-action="open-metrics" data-admin-only="1" style="display: none;">
 							Métricas de Ventas
 						</button>
 					</div>
@@ -218,14 +230,17 @@ class CimaSellerPortal {
 		});
 
 		root.on("click", "[data-action='open-delivery-notes']", () => {
+			if (!this.isAdmin()) return;
 			frappe.set_route("notas-entrega");
 		});
 
 		root.on("click", "[data-action='open-client-consumption']", () => {
+			if (!this.isAdmin()) return;
 			frappe.set_route("clientes-consumo");
 		});
 
 		root.on("click", "[data-action='open-metrics']", () => {
+			if (!this.isAdmin()) return;
 			frappe.set_route("metricas-ventas");
 		});
 
@@ -387,6 +402,7 @@ class CimaSellerPortal {
 			callback: (r) => {
 				if (!r.message) return;
 				this.state.bootstrap = r.message;
+				this.syncAdminVisibility();
 				this.state.priceList = r.message.default_price_list || "";
 				this.state.warehouse = r.message.default_warehouse || "";
 				this.state.salesChannel = r.message.default_sales_channel || "Detal";

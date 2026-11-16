@@ -12,12 +12,6 @@
  "page_name": "clientes-consumo",
  "roles": [
   {
-   "role": "Sales User"
-  },
-  {
-   "role": "Sales Manager"
-  },
-  {
    "role": "System Manager"
   }
  ],

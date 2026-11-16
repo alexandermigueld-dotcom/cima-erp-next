@@ -98,11 +98,27 @@ class SellerPosServiceTests(unittest.TestCase):
         self.assertIn("_apply_required_sales_metadata", storefront_py)
 
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
-        self.assertEqual(len(ws_data), 1)
+        self.assertEqual(len(ws_data), 2)
         self.assertEqual(ws_data[0]["label"], "Facturación Cima")
-        self.assertEqual(len(ws_data[0]["shortcuts"]), 4)
+        self.assertEqual(len(ws_data[0]["shortcuts"]), 1)
+        self.assertEqual(ws_data[0]["shortcuts"][0]["link_to"], "venta-rapida")
+        self.assertEqual(ws_data[1]["label"], "Administración Cima")
+        self.assertEqual([r["role"] for r in ws_data[1]["roles"]], ["System Manager"])
+        self.assertEqual(len(ws_data[1]["shortcuts"]), 4)
         self.assertIn("ve_vendedor_usuario", seller_pos_py)
+        self.assertIn("is_admin", seller_pos_py)
         self.assertIn("cima-logged-seller-badge", js_text)
+        self.assertIn('data-admin-only="1"', js_text)
+        self.assertIn("isAdmin()", js_text)
+
+        for admin_page in ("metricas_ventas", "clientes_consumo", "notas_entrega"):
+            p_json = root / "cima_ve" / "cima_ve" / "page" / admin_page / f"{admin_page}.json"
+            p_data = json.loads(p_json.read_text(encoding="utf-8"))
+            self.assertEqual([r["role"] for r in p_data["roles"]], ["System Manager"], admin_page)
+
+        for api_file in ("sales_metrics.py", "client_consumption.py", "delivery_notes.py"):
+            api_text = (root / "cima_ve" / "api" / api_file).read_text(encoding="utf-8")
+            self.assertIn('frappe.only_for("System Manager")', api_text, api_file)
 
 
 if __name__ == "__main__":
