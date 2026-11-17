@@ -816,6 +816,34 @@ def place_storefront_order(
 ) -> dict:
     """Crea una Nota de Entrega (Delivery Note) desde /tienda con comprobante, envío y notificación Email/WhatsApp."""
     import frappe
+
+    original_user = frappe.session.user
+    if original_user != "Guest":
+        return _place_storefront_order_impl(items, payment_method, payment_details, customer_info, delivery_provider)
+
+    frappe.set_user("Administrator")
+    try:
+        return _place_storefront_order_impl(
+            items,
+            payment_method,
+            payment_details,
+            customer_info,
+            delivery_provider,
+            original_user=original_user,
+        )
+    finally:
+        frappe.set_user(original_user)
+
+
+def _place_storefront_order_impl(
+    items: str | list[dict],
+    payment_method: str = "cashea",
+    payment_details: str | dict | None = None,
+    customer_info: str | dict | None = None,
+    delivery_provider: str = "",
+    original_user: str = "",
+) -> dict:
+    import frappe
     from cima_ve.api.delivery_notes import _get_auto_discount_config, send_delivery_note_created_notifications
     from cima_ve.api.seller_pos import _apply_required_sales_metadata
     from cima_ve.services.delivery_note_service import compute_delivery_note_discounts
@@ -834,7 +862,7 @@ def place_storefront_order(
     if provider.get("requires_address") and not address_text:
         frappe.throw(f"Ingresa la dirección o agencia de entrega para {provider['label']}.")
 
-    user_email = frappe.session.user
+    user_email = original_user or frappe.session.user
     effective_email = ""
     effective_name = (cust_info.get("full_name") or "").strip()
     effective_phone = (cust_info.get("phone") or "").strip()
