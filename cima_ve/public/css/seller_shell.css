@@ -23,16 +23,54 @@
   text-decoration: none;
   transition: background 0.15s ease, color 0.15s ease;
 }
+#cima-seller-tabs.cima-seller-tabs-docked {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  width: 100%;
+  background: var(--navbar-bg, #ffffff);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
 #cima-seller-tabs a.is-active {
   background: #0f172a;
   color: #ffffff;
 }
 
-/* Botón compacto en la barra superior para administradores */
+/* Botón compacto en la barra superior y en Inicio para administradores */
 #cima-admin-pos-item {
   display: flex;
   align-items: center;
   margin-right: 4px;
+}
+.cima-page-pos-btn {
+  white-space: nowrap;
+  margin-right: 6px;
+}
+#cima-home-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+.cima-home-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none !important;
+  color: var(--text-color, #1e293b);
+  background: var(--control-bg, #f1f5f9);
+}
+.cima-home-btn-primary {
+  background: #0f172a;
+  color: #ffffff !important;
 }
 #cima-admin-pos-btn {
   display: inline-flex;

@@ -58,7 +58,9 @@
   }
 
   function getNavbarContainer() {
-    return document.querySelector("header.navbar .container, header.navbar .container-fluid, header.navbar");
+    return document.querySelector(
+      "header.navbar .container, header.navbar .container-fluid, .navbar .container, .navbar .container-fluid"
+    );
   }
 
   function updateActiveSellerTab() {
@@ -75,8 +77,6 @@
       updateActiveSellerTab();
       return true;
     }
-    const container = getNavbarContainer();
-    if (!container) return false;
 
     const nav = document.createElement("nav");
     nav.id = "cima-seller-tabs";
@@ -84,7 +84,19 @@
     nav.innerHTML =
       '<a href="/app/venta-rapida" data-route="venta-rapida">Facturaci\u00f3n R\u00e1pida</a>' +
       '<a href="/app/notas-entrega" data-route="notas-entrega">Notas de Entrega</a>';
-    container.insertBefore(nav, container.firstChild);
+
+    const navbarContainer = getNavbarContainer();
+    if (navbarContainer) {
+      navbarContainer.insertBefore(nav, navbarContainer.firstChild);
+    } else {
+      const host =
+        document.querySelector("div.sticky-top") ||
+        document.querySelector(".main-section") ||
+        document.body;
+      if (!host) return false;
+      nav.classList.add("cima-seller-tabs-docked");
+      host.insertBefore(nav, host.firstChild);
+    }
 
     nav.addEventListener("click", (e) => {
       const a = e.target.closest("a[data-route]");
@@ -98,9 +110,11 @@
 
   function addAdminNavbarButton() {
     if (document.getElementById("cima-admin-pos-item")) return true;
+    const toolbarUser = document.getElementById("toolbar-user");
     const navList =
-      document.querySelector("header.navbar .navbar-collapse > ul.navbar-nav:last-of-type") ||
-      document.querySelector("header.navbar ul.navbar-nav:last-of-type");
+      (toolbarUser && toolbarUser.closest("ul.navbar-nav")) ||
+      document.querySelector("header.navbar ul.navbar-nav:last-of-type") ||
+      document.querySelector(".navbar ul.navbar-nav:last-of-type");
     if (!navList) return false;
 
     const li = document.createElement("li");
@@ -120,6 +134,61 @@
     return true;
   }
 
+  function addAdminPageHeaderButton() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (route[0] === LANDING) return;
+    const pages = document.querySelectorAll(".page-container");
+    pages.forEach((page) => {
+      if (page.style.display === "none") return;
+      const actions = page.querySelector(".page-head .page-actions");
+      if (!actions || actions.querySelector(".cima-page-pos-btn")) return;
+      const btn = document.createElement("a");
+      btn.className = "btn btn-primary btn-sm cima-page-pos-btn";
+      btn.href = "/app/venta-rapida";
+      btn.textContent = "Facturaci\u00f3n R\u00e1pida";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        frappe.set_route(LANDING);
+      });
+      actions.insertBefore(btn, actions.firstChild);
+    });
+  }
+
+  function isHomeRoute() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    const r0 = (route[0] || "").toLowerCase();
+    const r1 = (route[1] || "").toLowerCase();
+    return (
+      !r0 ||
+      r0 === "home" ||
+      r0 === "desktop" ||
+      (r0 === "workspaces" && (!r1 || r1 === "home"))
+    );
+  }
+
+  function addAdminHomeShortcut() {
+    if (!isHomeRoute()) return;
+    const containers = document.querySelectorAll(
+      ".workspace-page .layout-main-section, .desktop-container, #page-Workspaces .layout-main-section"
+    );
+    containers.forEach((container) => {
+      if (container.offsetParent === null) return;
+      if (container.querySelector("#cima-home-shortcuts")) return;
+      const box = document.createElement("div");
+      box.id = "cima-home-shortcuts";
+      box.innerHTML =
+        '<a class="cima-home-btn cima-home-btn-primary" href="/app/venta-rapida" data-route="venta-rapida">Facturaci\u00f3n R\u00e1pida</a>' +
+        '<a class="cima-home-btn" href="/app/notas-entrega" data-route="notas-entrega">Notas de Entrega</a>';
+      box.addEventListener("click", (e) => {
+        const a = e.target.closest("a[data-route]");
+        if (!a) return;
+        e.preventDefault();
+        frappe.set_route(a.getAttribute("data-route"));
+      });
+      container.insertBefore(box, container.firstChild);
+    });
+  }
+
   function removeLegacyQuickNav() {
     const legacy = document.getElementById("cima-quick-nav");
     if (legacy) legacy.remove();
@@ -130,13 +199,20 @@
   function init() {
     if (started) return;
     if (typeof frappe === "undefined" || !frappe.session || frappe.session.user === "Guest") return;
-    if (!getNavbarContainer()) return;
+    if (!document.querySelector(".main-section, .page-head, header.navbar, #toolbar-user")) return;
     started = true;
     addPwaMeta();
     removeLegacyQuickNav();
 
     if (isAdmin()) {
       addAdminNavbarButton();
+      addAdminPageHeaderButton();
+      addAdminHomeShortcut();
+      $(document).on("page-change", () => {
+        addAdminNavbarButton();
+        addAdminPageHeaderButton();
+        setTimeout(addAdminHomeShortcut, 150);
+      });
       return;
     }
 
@@ -146,6 +222,7 @@
     enforceSellerRoute();
     $(document).on("page-change", () => {
       enforceSellerRoute();
+      addSellerTopTabs();
       updateActiveSellerTab();
     });
   }
