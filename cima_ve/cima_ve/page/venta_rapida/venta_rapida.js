@@ -217,7 +217,6 @@ class CimaSellerPortal {
 		});
 
 		root.on("click", "[data-action='open-delivery-notes']", () => {
-			if (!this.isAdmin()) return;
 			frappe.set_route("notas-entrega");
 		});
 
@@ -1010,9 +1009,9 @@ class CimaSellerPortal {
 		const seller = res.seller || {};
 		const sellerLabel = seller.fullname || seller.user || frappe.session.user_fullname || frappe.session.user || "";
 		const docName = res.delivery_note || res.invoice_name || "";
-		const adminLink = this.isAdmin()
+		const notesLink = this.isAdmin()
 			? ` · <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>`
-			: "";
+			: ` · <a href="/app/notas-entrega" style="font-weight:700;">Ver en Mis Notas de Entrega</a>`;
 		const discItems = res.discounted_items || [];
 		const gi = res.discount_info || {};
 		const globalDiscParts = [];
@@ -1039,7 +1038,7 @@ class CimaSellerPortal {
 				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}${bannerBs}</div>
 				<div class="small mt-1">
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText} ·
-					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${adminLink}
+					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${notesLink}
 				</div>
 				${globalDiscLine}
 				${discountLine}

@@ -461,6 +461,12 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("(hist.)", ne_js)
         self.assertIn("referencia histórica", ne_js)
 
+    def test_non_admin_can_open_notas_entrega_from_venta_rapida(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        self.assertIn('root.on("click", "[data-action=\'open-delivery-notes\']", () => {\n\t\t\tfrappe.set_route("notas-entrega");', vr_js)
+        self.assertIn("Ver en Mis Notas de Entrega", vr_js)
+
 
 if __name__ == "__main__":
     unittest.main()
