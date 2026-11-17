@@ -936,7 +936,7 @@ def place_storefront_order(
             "selling_price_list": cfg["price_list"] or None,
             "set_warehouse": cfg["warehouse"] or None,
             "ignore_pricing_rule": 0,
-            "ve_vendedor_usuario": "Tienda Web",
+            "ve_vendedor_usuario": None,
             "ve_vendedor_nombre": "Tienda Web (/tienda)",
             "ve_ne_estado": "Pendiente",
             "remarks": " | ".join(note_parts),

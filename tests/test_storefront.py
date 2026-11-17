@@ -147,6 +147,13 @@ class StorefrontServiceTests(unittest.TestCase):
         self.assertIn("wa.me/584141234567", notif["customer_whatsapp_url"])
         self.assertIn("carlos@example.com", notif["html"])
 
+    def test_storefront_delivery_note_does_not_set_invalid_user_link(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        storefront_api = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        self.assertNotIn('"ve_vendedor_usuario": "Tienda Web"', storefront_api)
+        self.assertIn('"ve_vendedor_usuario": None', storefront_api)
+        self.assertIn('"ve_vendedor_nombre": "Tienda Web (/tienda)"', storefront_api)
+
 
 if __name__ == "__main__":
     unittest.main()
