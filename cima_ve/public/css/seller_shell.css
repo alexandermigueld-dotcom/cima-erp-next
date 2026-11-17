@@ -1,0 +1,18 @@
+/* Interfaz simplificada para usuarios que no son System Manager */
+body.cima-seller-mode .layout-side-section,
+body.cima-seller-mode .sidebar-toggle-btn,
+body.cima-seller-mode .search-bar,
+body.cima-seller-mode #navbar-search,
+body.cima-seller-mode .navbar-breadcrumbs,
+body.cima-seller-mode .navbar-home,
+body.cima-seller-mode .dropdown-help,
+body.cima-seller-mode .dropdown-notifications,
+body.cima-seller-mode .dropdown-message {
+  display: none !important;
+}
+
+body.cima-seller-mode .layout-main-section-wrapper {
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 100%;
+}
