@@ -1,10 +1,32 @@
 /* Interfaz simplificada para usuarios que no son System Manager */
+#cima-quick-nav {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1050;
+  display: flex;
+  gap: 8px;
+}
+#cima-quick-nav a {
+  background: #0f172a;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  text-decoration: none;
+}
 body.cima-seller-mode .layout-side-section,
 body.cima-seller-mode .sidebar-toggle-btn,
 body.cima-seller-mode .search-bar,
 body.cima-seller-mode #navbar-search,
 body.cima-seller-mode .navbar-breadcrumbs,
 body.cima-seller-mode .navbar-home,
+body.cima-seller-mode .navbar .app-logo,
+body.cima-seller-mode .navbar .awesomplete,
+body.cima-seller-mode .navbar .form-inline,
+body.cima-seller-mode .page-head .sidebar-toggle-btn,
 body.cima-seller-mode .dropdown-help,
 body.cima-seller-mode .dropdown-notifications,
 body.cima-seller-mode .dropdown-message {
