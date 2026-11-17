@@ -241,6 +241,32 @@ def append_payment_history(raw_history: str | list | None, entry: dict) -> tuple
     return history, json.dumps(history, ensure_ascii=False)
 
 
+def compute_historical_bs_payment(
+    total_to_pay_usd: float,
+    paid_now_usd: float,
+    current_bs_rate: float,
+    existing_history: list[dict] | None = None,
+    is_fully_paid: bool = False,
+) -> dict:
+    """Calcula el monto en Bs de este abono y el total histórico en Bs al quedar pagada."""
+    rate = round(max(float(current_bs_rate or 0.0), 0.0), 4)
+    paid_now_bs = round(max(float(paid_now_usd or 0.0), 0.0) * rate, 2) if rate > 0 else 0.0
+    prior_bs = sum(float(h.get("amount_bs") or 0.0) for h in (existing_history or []))
+    paid_total_bs = round(prior_bs + paid_now_bs, 2)
+    if is_fully_paid:
+        total_bs = paid_total_bs if paid_total_bs > 0 else (
+            round(max(float(total_to_pay_usd or 0.0), 0.0) * rate, 2) if rate > 0 else 0.0
+        )
+    else:
+        total_bs = 0.0
+    return {
+        "exchange_rate": rate,
+        "paid_now_bs": paid_now_bs,
+        "paid_total_bs": paid_total_bs,
+        "total_bs": total_bs,
+    }
+
+
 DEFAULT_COMMISSION_RULES: list[dict] = [
     {"label": "Meta Ads 7%", "channel": "Meta Ads", "percentage": 7.0},
     {"label": "Detal 8%", "channel": "Detal", "percentage": 8.0},
@@ -485,6 +511,18 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
         item["cost_total"] = cost_total
         item["margin_amount"] = margin_amount
         item["commission_amount"] = comm_amount
+
+        exchange_rate_used = round(float(row.get("ve_ne_tasa_cambio") or 0.0), 4)
+        paid_bs = round(float(row.get("ve_ne_monto_pagado_bs") or 0.0), 2)
+        if paid_bs <= 0 and history:
+            paid_bs = round(sum(float(h.get("amount_bs") or 0.0) for h in history), 2)
+        total_bs = round(float(row.get("ve_ne_monto_bs") or 0.0), 2)
+        if estado == "Pagada" and total_bs <= 0 and paid_bs > 0:
+            total_bs = paid_bs
+        item["exchange_rate_used"] = exchange_rate_used
+        item["paid_bs"] = paid_bs
+        item["total_bs"] = total_bs
+        item["is_bs_frozen"] = bool(estado == "Pagada" or total_bs > 0)
         normalized.append(item)
 
     return {

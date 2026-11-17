@@ -287,7 +287,10 @@ class CimaNotasEntrega {
 										const proofLink = h.screenshot_url
 											? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
 											: "";
-										return `<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (Ref: ${frappe.utils.escape_html(h.reference)})` : ""}${proofLink} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
+										const hBs = Number(h.amount_bs || 0) > 0
+											? ` (${this.formatBs(h.amount_bs)})`
+											: "";
+										return `<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}${hBs}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (Ref: ${frappe.utils.escape_html(h.reference)})` : ""}${proofLink} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
 									}
 								)
 								.join("") +
@@ -310,10 +313,12 @@ class CimaNotasEntrega {
 						]
 							.filter(Boolean)
 							.join(" + ");
+						const paidBsText = Number(n.paid_bs || 0) > 0 ? ` (${this.formatBs(n.paid_bs)})` : "";
+						const totalBsText = Number(n.total_bs || 0) > 0 ? ` (${this.formatBs(n.total_bs)})` : paidBsText;
 						const balanceLine =
 							n.ve_ne_estado === "Pago Parcial"
-								? `<div style="color:#1e40af;font-weight:700;">Pagado: $${Number(n.paid_amount || 0).toFixed(2)} · Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
-								: `<div>Total pagado: <strong>$${Number(n.paid_amount || n.total_to_pay || n.amount || 0).toFixed(2)}</strong></div>`;
+								? `<div style="color:#1e40af;font-weight:700;">Pagado: $${Number(n.paid_amount || 0).toFixed(2)}${paidBsText} · Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
+								: `<div>Total pagado: <strong>$${Number(n.paid_amount || n.total_to_pay || n.amount || 0).toFixed(2)}${totalBsText}</strong></div>`;
 						resolutionHtml = `
 							<div class="small">
 								${balanceLine}
@@ -348,8 +353,28 @@ class CimaNotasEntrega {
 
 					const fx = this.data?.config?.exchange_rate || {};
 					const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
-					const totalBs = fxRate > 0 ? Number(n.total_to_pay || n.amount || 0) * fxRate : 0;
-					const bsLine = totalBs > 0 ? `<div class="small text-muted">Bs. ${totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : "";
+					const totalUsd = Number(n.total_to_pay || n.amount || 0);
+					let bsLine = "";
+					if (n.ve_ne_estado === "Pagada") {
+						const frozenBs = Number(n.total_bs || n.paid_bs || 0);
+						if (frozenBs > 0) {
+							const frozenRate = Number(n.exchange_rate_used || 0);
+							const rateTip = frozenRate > 0 ? ` title="Referencia histórica congelada @ Bs. ${frozenRate.toFixed(2)}/USD"` : "";
+							bsLine = `<div class="small text-muted"${rateTip}>${this.formatBs(frozenBs)} <span style="font-size:10px;">(hist.)</span></div>`;
+						}
+					} else if (n.ve_ne_estado === "Pago Parcial") {
+						const paidBs = Number(n.paid_bs || 0);
+						const remBs = fxRate > 0 ? Number(n.remaining_amount || 0) * fxRate : 0;
+						const paidBsHtml = paidBs > 0 ? `<div class="small text-muted">Pagado: ${this.formatBs(paidBs)}</div>` : "";
+						const remBsHtml = remBs > 0 ? ` (${this.formatBs(remBs)})` : "";
+						bsLine = paidBsHtml;
+						n._remBsHtml = remBsHtml;
+					} else if (n.ve_ne_estado !== "Cancelada" && fxRate > 0) {
+						const liveBs = totalUsd * fxRate;
+						if (liveBs > 0) {
+							bsLine = `<div class="small text-muted">${this.formatBs(liveBs)}</div>`;
+						}
+					}
 
 					const origSub = Number(n.subtotal_before_discount || 0);
 					const baseDiscPrefix =
@@ -358,8 +383,8 @@ class CimaNotasEntrega {
 							: "";
 					const amountCellHtml =
 						n.ve_ne_estado === "Pago Parcial"
-							? `${baseDiscPrefix}<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div>${bsLine}<div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
-							: `${baseDiscPrefix}$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}${bsLine}`;
+							? `${baseDiscPrefix}<div>$${totalUsd.toFixed(2)}</div>${bsLine}<div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}${n._remBsHtml || ""}</div>`
+							: `${baseDiscPrefix}$${totalUsd.toFixed(2)}${bsLine}`;
 
 					const originBadge =
 						n.ve_ne_origen === "Tienda Web"
@@ -405,14 +430,24 @@ class CimaNotasEntrega {
 		);
 	}
 
+	formatBs(amount) {
+		return `Bs. ${Number(amount || 0).toLocaleString("es-VE", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		})}`;
+	}
+
 	openPaidDialog(note) {
 		const cfg = this.data?.config || {};
+		const fx = cfg.exchange_rate || {};
+		const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
 		const ivaRate = Number(cfg.iva_rate || 16);
 		const igtfRate = Number(cfg.igtf_rate || 3);
 		const methods = cfg.payment_methods || ["Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta"];
 		const baseAmount = Number(note.net_total || note.amount || 0);
 		const hasExistingInvoice = Boolean(note.ve_ne_factura);
 		const alreadyPaid = Number(note.paid_amount || 0);
+		const alreadyPaidBs = Number(note.paid_bs || 0);
 		const existingTotal = Number(note.total_to_pay || baseAmount);
 		const existingRemaining = hasExistingInvoice
 			? Math.max(Number((existingTotal - alreadyPaid).toFixed(2)), 0)
@@ -421,14 +456,15 @@ class CimaNotasEntrega {
 
 		const historyBanner = history.length
 			? `<div class="mt-2 p-2 small" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;">
-				<div><strong>Pagos anteriores:</strong> $${alreadyPaid.toFixed(2)} de $${existingTotal.toFixed(2)} · <strong>Saldo pendiente: $${existingRemaining.toFixed(2)}</strong></div>
+				<div><strong>Pagos anteriores:</strong> $${alreadyPaid.toFixed(2)}${alreadyPaidBs > 0 ? ` (${this.formatBs(alreadyPaidBs)})` : ""} de $${existingTotal.toFixed(2)} · <strong>Saldo pendiente: $${existingRemaining.toFixed(2)}</strong></div>
 				${history
 					.map(
 						(h, idx) => {
 							const proof = h.screenshot_url
 								? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
 								: "";
-							return `<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}${proof}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
+							const hBs = Number(h.amount_bs || 0) > 0 ? ` (${this.formatBs(h.amount_bs)})` : "";
+							return `<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)}${hBs} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}${proof}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
 						}
 					)
 					.join("")}
@@ -603,11 +639,19 @@ class CimaNotasEntrega {
 				? `<span style="color:#15803d;font-weight:700;">Quedará PAGADA (saldrá de pendientes)</span>`
 				: `<span style="color:#1e40af;font-weight:700;">Quedará PAGO PARCIAL (seguirá visible hasta pagar $${remainingAfter.toFixed(2)} restantes)</span>`;
 
+			const remBeforeBs = fxRate > 0 ? ` <span class="text-primary">(${this.formatBs(calc.remainingBefore * fxRate)})</span>` : "";
+			const payAmtBs = fxRate > 0 ? ` <span class="text-primary">(${this.formatBs(payAmt * fxRate)})</span>` : "";
+			const remAfterBs = fxRate > 0 && remainingAfter > 0 ? ` (${this.formatBs(remainingAfter * fxRate)})` : "";
+			const rateNote = fxRate > 0
+				? `<div class="small text-muted mt-1">Tasa actual: <strong>Bs. ${fxRate.toFixed(2)} / USD</strong> · Al registrar el pago se guardará el monto en Bs como referencia histórica.</div>`
+				: "";
+
 			d.fields_dict.totals_preview.$wrapper.html(`
 				<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:6px;">
-					${hasExistingInvoice ? `<div>Total Facturado: <strong>$${calc.total.toFixed(2)}</strong> · Ya Pagado: <strong>$${alreadyPaid.toFixed(2)}</strong></div>` : `<div>Base: <strong>$${baseAmount.toFixed(2)}</strong> · IVA: <strong>$${calc.iva.toFixed(2)}</strong> · IGTF: <strong>$${calc.igtf.toFixed(2)}</strong></div>`}
-					<div>Saldo pendiente actual: <strong>$${calc.remainingBefore.toFixed(2)}</strong></div>
-					<div>Este pago: <strong>$${payAmt.toFixed(2)}</strong> · Saldo restante: <strong>$${remainingAfter.toFixed(2)}</strong></div>
+					${hasExistingInvoice ? `<div>Total Facturado: <strong>$${calc.total.toFixed(2)}</strong> · Ya Pagado: <strong>$${alreadyPaid.toFixed(2)}${alreadyPaidBs > 0 ? ` (${this.formatBs(alreadyPaidBs)})` : ""}</strong></div>` : `<div>Base: <strong>$${baseAmount.toFixed(2)}</strong> · IVA: <strong>$${calc.iva.toFixed(2)}</strong> · IGTF: <strong>$${calc.igtf.toFixed(2)}</strong></div>`}
+					<div>Saldo pendiente actual: <strong>$${calc.remainingBefore.toFixed(2)}</strong>${remBeforeBs}</div>
+					<div>Este pago: <strong>$${payAmt.toFixed(2)}</strong>${payAmtBs} · Saldo restante: <strong>$${remainingAfter.toFixed(2)}</strong>${remAfterBs}</div>
+					${rateNote}
 					<div class="mt-1 small">${nextStateLabel}</div>
 				</div>
 			`);

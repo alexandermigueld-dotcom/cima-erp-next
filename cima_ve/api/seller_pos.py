@@ -106,6 +106,14 @@ def get_seller_bootstrap() -> dict:
     except Exception:
         pass
 
+    exchange_rate = {"bcv_rate": 0.0, "adjusted_rate": 0.0, "applied_brecha_pct": 0.0}
+    try:
+        from cima_ve.api.exchange_rates import get_current_exchange_rates
+
+        exchange_rate = get_current_exchange_rates()
+    except Exception:
+        pass
+
     return {
         "company": default_company,
         "current_user": current_user,
@@ -123,6 +131,7 @@ def get_seller_bootstrap() -> dict:
         "auto_discount_tiers": auto_discount_tiers,
         "commission_enabled": commission_enabled,
         "commission_rules": commission_rules,
+        "exchange_rate": exchange_rate,
     }
 
 

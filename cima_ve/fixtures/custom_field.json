@@ -589,5 +589,44 @@
   "name": "Delivery Note-ve_ne_comision_monto",
   "precision": "2",
   "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_tasa_cambio",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_comision_monto",
+  "label": "Tasa de Cambio al Pago (Bs/USD)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_tasa_cambio",
+  "precision": "4",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_monto_bs",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_tasa_cambio",
+  "label": "Monto Total en Bs",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_monto_bs",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_monto_pagado_bs",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_monto_bs",
+  "label": "Monto Pagado en Bs",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_monto_pagado_bs",
+  "precision": "2",
+  "read_only": 1
  }
 ]

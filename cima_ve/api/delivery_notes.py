@@ -12,6 +12,7 @@ from cima_ve.services.delivery_note_service import (
     build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
+    compute_historical_bs_payment,
     compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
@@ -506,6 +507,9 @@ def get_delivery_notes(
     has_costo_total = dn_meta.has_field("ve_ne_costo_total")
     has_margen = dn_meta.has_field("ve_ne_margen_ganancia")
     has_com_monto = dn_meta.has_field("ve_ne_comision_monto")
+    has_tasa_cambio = dn_meta.has_field("ve_ne_tasa_cambio")
+    has_monto_bs = dn_meta.has_field("ve_ne_monto_bs")
+    has_monto_pagado_bs = dn_meta.has_field("ve_ne_monto_pagado_bs")
 
     conditions = ["dn.docstatus IN (1, 2)"]
     params: dict = {}
@@ -584,6 +588,9 @@ def get_delivery_notes(
         "dn.ve_ne_costo_total AS ve_ne_costo_total" if has_costo_total else "0 AS ve_ne_costo_total",
         "dn.ve_ne_margen_ganancia AS ve_ne_margen_ganancia" if has_margen else "0 AS ve_ne_margen_ganancia",
         "dn.ve_ne_comision_monto AS ve_ne_comision_monto" if has_com_monto else "0 AS ve_ne_comision_monto",
+        "dn.ve_ne_tasa_cambio AS ve_ne_tasa_cambio" if has_tasa_cambio else "0 AS ve_ne_tasa_cambio",
+        "dn.ve_ne_monto_bs AS ve_ne_monto_bs" if has_monto_bs else "0 AS ve_ne_monto_bs",
+        "dn.ve_ne_monto_pagado_bs AS ve_ne_monto_pagado_bs" if has_monto_pagado_bs else "0 AS ve_ne_monto_pagado_bs",
     ]
 
     rows = frappe.db.sql(
@@ -988,11 +995,26 @@ def mark_delivery_note_paid(
     new_paid_total = payment_state["new_paid_total"]
     new_remaining = payment_state["new_remaining"]
 
+    fx = _get_exchange_rate_snapshot()
+    current_bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
     existing_hist = getattr(dn, "ve_ne_historial_pagos", "") if dn.meta.has_field("ve_ne_historial_pagos") else ""
+    from cima_ve.services.delivery_note_service import parse_payment_history
+
+    prior_history = parse_payment_history(existing_hist)
+    bs_calc = compute_historical_bs_payment(
+        total_to_pay_usd=total_to_pay,
+        paid_now_usd=pay_amt,
+        current_bs_rate=current_bs_rate,
+        existing_history=prior_history,
+        is_fully_paid=payment_state["is_fully_paid"],
+    )
+
     history_list, history_json = append_payment_history(
         existing_hist,
         {
             "amount": pay_amt,
+            "amount_bs": bs_calc["paid_now_bs"],
+            "exchange_rate": bs_calc["exchange_rate"],
             "method": clean_method,
             "reference": clean_reference,
             "screenshot_url": clean_screenshot,
@@ -1019,10 +1041,21 @@ def mark_delivery_note_paid(
         dn.db_set("ve_ne_saldo_pendiente", new_remaining)
     if dn.meta.has_field("ve_ne_historial_pagos"):
         dn.db_set("ve_ne_historial_pagos", history_json)
+    if dn.meta.has_field("ve_ne_tasa_cambio") and bs_calc["exchange_rate"] > 0:
+        dn.db_set("ve_ne_tasa_cambio", bs_calc["exchange_rate"])
+    if dn.meta.has_field("ve_ne_monto_pagado_bs"):
+        dn.db_set("ve_ne_monto_pagado_bs", bs_calc["paid_total_bs"])
+    if dn.meta.has_field("ve_ne_monto_bs") and bs_calc["total_bs"] > 0:
+        dn.db_set("ve_ne_monto_bs", bs_calc["total_bs"])
 
+    bs_comment = (
+        f" (Bs. {bs_calc['paid_now_bs']:,.2f} @ {bs_calc['exchange_rate']:.2f})"
+        if bs_calc["paid_now_bs"] > 0
+        else ""
+    )
     comment_msg = (
         f"Pago registrado por {resolved_by} el {resolved_at}: "
-        f"Abono ${pay_amt:.2f} ({clean_method}) | "
+        f"Abono ${pay_amt:.2f}{bs_comment} ({clean_method}) | "
         f"Acumulado: ${new_paid_total:.2f} / ${total_to_pay:.2f} | "
         f"Saldo pendiente: ${new_remaining:.2f} | Estado: {new_estado} | Factura: {si.name}"
         + (f" | Ref: {clean_reference}" if clean_reference else "")
@@ -1042,6 +1075,10 @@ def mark_delivery_note_paid(
         "paid_now": pay_amt,
         "paid_total": new_paid_total,
         "remaining_amount": new_remaining,
+        "exchange_rate": bs_calc["exchange_rate"],
+        "paid_now_bs": bs_calc["paid_now_bs"],
+        "paid_total_bs": bs_calc["paid_total_bs"],
+        "total_bs": bs_calc["total_bs"],
         "ve_ne_estado": new_estado,
         "fecha_resolucion": resolved_at,
         "usuario_resolucion": resolved_by,

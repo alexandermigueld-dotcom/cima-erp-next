@@ -11,6 +11,7 @@ from cima_ve.services.delivery_note_service import (
     build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
+    compute_historical_bs_payment,
     compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
@@ -397,6 +398,68 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("commission_option", vr_js)
         self.assertIn("calculate_seller_commissions", ne_js)
         self.assertIn("Calcular Comisiones", ne_js)
+
+    def test_historical_bs_payment_and_pos_bs_display(self) -> None:
+        # First partial payment at rate 1000 Bs/USD
+        step1 = compute_historical_bs_payment(
+            total_to_pay_usd=100.0,
+            paid_now_usd=40.0,
+            current_bs_rate=1000.0,
+            existing_history=[],
+            is_fully_paid=False,
+        )
+        self.assertEqual(step1["exchange_rate"], 1000.0)
+        self.assertEqual(step1["paid_now_bs"], 40000.0)
+        self.assertEqual(step1["paid_total_bs"], 40000.0)
+        self.assertEqual(step1["total_bs"], 0.0)
+
+        # Second payment completing the order at rate 1100 Bs/USD -> freezes total_bs
+        step2 = compute_historical_bs_payment(
+            total_to_pay_usd=100.0,
+            paid_now_usd=60.0,
+            current_bs_rate=1100.0,
+            existing_history=[{"amount": 40.0, "amount_bs": 40000.0, "exchange_rate": 1000.0}],
+            is_fully_paid=True,
+        )
+        self.assertEqual(step2["paid_now_bs"], 66000.0)
+        self.assertEqual(step2["paid_total_bs"], 106000.0)
+        self.assertEqual(step2["total_bs"], 106000.0)
+
+        # summarize_delivery_notes preserves frozen historical Bs on Pagada notes
+        summarized = summarize_delivery_notes(
+            [
+                {
+                    "name": "DN-PAID",
+                    "docstatus": 1,
+                    "ve_ne_estado": "Pagada",
+                    "grand_total": 100.0,
+                    "ve_ne_monto_total": 100.0,
+                    "ve_ne_monto_pagado": 100.0,
+                    "ve_ne_tasa_cambio": 1069.55,
+                    "ve_ne_monto_bs": 106955.0,
+                    "ve_ne_monto_pagado_bs": 106955.0,
+                }
+            ]
+        )
+        note = summarized["notes"][0]
+        self.assertTrue(note["is_bs_frozen"])
+        self.assertEqual(note["total_bs"], 106955.0)
+        self.assertEqual(note["paid_bs"], 106955.0)
+        self.assertEqual(note["exchange_rate_used"], 1069.55)
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        cf_json = (root / "cima_ve" / "fixtures" / "custom_field.json").read_text(encoding="utf-8")
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        sp_py = (root / "cima_ve" / "api" / "seller_pos.py").read_text(encoding="utf-8")
+
+        for fname in ("ve_ne_tasa_cambio", "ve_ne_monto_bs", "ve_ne_monto_pagado_bs"):
+            self.assertIn(fname, cf_json)
+        self.assertIn('"exchange_rate": exchange_rate', sp_py)
+        self.assertIn("TOTAL (Bs.)", vr_js)
+        self.assertIn("getBsRate", vr_js)
+        self.assertIn("(hist.)", ne_js)
+        self.assertIn("referencia histórica", ne_js)
 
 
 if __name__ == "__main__":

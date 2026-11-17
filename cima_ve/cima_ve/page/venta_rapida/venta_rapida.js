@@ -460,8 +460,21 @@ class CimaSellerPortal {
 
 				this.loadCustomers("");
 				this.loadInventory("");
+				this.updateSummaryFromCart();
 			},
 		});
+	}
+
+	getBsRate() {
+		const fx = this.state.bootstrap?.exchange_rate || {};
+		return Number(fx.adjusted_rate || fx.bcv_rate || 0);
+	}
+
+	formatBs(amount) {
+		return `Bs. ${Number(amount || 0).toLocaleString("es-VE", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		})}`;
 	}
 
 	loadCustomers(query) {
@@ -806,17 +819,24 @@ class CimaSellerPortal {
 
 	renderSummary(base) {
 		const d = this.computeGlobalDiscounts(base);
+		const bsRate = this.getBsRate();
+		const totalBs = bsRate > 0 ? Number((d.finalTotal * bsRate).toFixed(2)) : 0;
 		const autoLine = d.autoAmount > 0
 			? `<div class="cima-summary-line" style="color:#92400e;"><span>Descuento automático (${d.autoPct}% · ${frappe.utils.escape_html(d.autoLabel)}):</span><strong>-${d.autoAmount.toFixed(2)}</strong></div>`
 			: "";
 		const manualLine = d.manualAmount > 0
 			? `<div class="cima-summary-line" style="color:#92400e;"><span>Descuento manual (${d.manualPct}%):</span><strong>-${d.manualAmount.toFixed(2)}</strong></div>`
 			: "";
+		const bsLine = bsRate > 0
+			? `<div class="cima-summary-line" style="color:#1d4ed8;font-weight:700;margin-top:4px;"><span>TOTAL (Bs.):</span><strong>${this.formatBs(totalBs)}</strong></div>
+			   <div class="small text-muted text-right">Tasa: Bs. ${bsRate.toFixed(2)} / USD</div>`
+			: "";
 		this.wrapper.find("#cima-tax-summary").html(`
 			<div class="cima-summary-line"><span>Subtotal:</span><strong>${d.subtotal.toFixed(2)}</strong></div>
 			${autoLine}
 			${manualLine}
 			<div class="cima-summary-total"><span>TOTAL:</span><span>${d.finalTotal.toFixed(2)}</span></div>
+			${bsLine}
 		`);
 	}
 
@@ -1012,9 +1032,11 @@ class CimaSellerPortal {
 			: "";
 		const commInfo = res.commission || {};
 		const commOptText = commInfo.option ? ` · <strong>Modalidad:</strong> ${frappe.utils.escape_html(commInfo.option)}` : "";
+		const bsRate = this.getBsRate();
+		const bannerBs = bsRate > 0 ? ` (${this.formatBs(Number(res.grand_total || 0) * bsRate)})` : "";
 		box.html(`
 			<div class="cima-result-banner">
-				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
+				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}${bannerBs}</div>
 				<div class="small mt-1">
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText} ·
 					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${adminLink}
