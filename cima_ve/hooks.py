@@ -23,6 +23,14 @@ doc_events = {
     }
 }
 
+permission_query_conditions = {
+    "Delivery Note": "cima_ve.overrides.delivery_note_permissions.get_permission_query_conditions",
+}
+
+has_permission = {
+    "Delivery Note": "cima_ve.overrides.delivery_note_permissions.has_permission",
+}
+
 scheduler_events = {
     "hourly": [
         "cima_ve.api.exchange_rates.sync_exchange_rates_job",

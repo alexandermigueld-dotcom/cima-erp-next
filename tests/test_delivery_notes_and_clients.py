@@ -468,5 +468,38 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("Ver en Mis Notas de Entrega", vr_js)
 
 
+class DeliveryNotePermissionTests(unittest.TestCase):
+    def test_hooks_and_module_restrict_delivery_notes(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        hooks = (root / "cima_ve" / "hooks.py").read_text(encoding="utf-8")
+        self.assertIn("permission_query_conditions", hooks)
+        self.assertIn("has_permission", hooks)
+        from cima_ve.overrides import delivery_note_permissions as p
+
+        self.assertTrue(p._is_admin("x@y.com", ["System Manager"]))
+        self.assertFalse(p._is_admin("x@y.com", ["Sales User"]))
+
+        class Doc:
+            owner = "a@x.com"
+            ve_vendedor_usuario = "b@x.com"
+
+        class FakeFrappe:
+            class session:
+                user = "a@x.com"
+
+            @staticmethod
+            def get_roles(user):
+                return ["Sales User"]
+
+        import sys
+
+        sys.modules["frappe"] = FakeFrappe
+        try:
+            self.assertFalse(p.has_permission(Doc(), user="a@x.com"))
+            self.assertIsNone(p.has_permission(Doc(), user="b@x.com"))
+        finally:
+            del sys.modules["frappe"]
+
+
 if __name__ == "__main__":
     unittest.main()

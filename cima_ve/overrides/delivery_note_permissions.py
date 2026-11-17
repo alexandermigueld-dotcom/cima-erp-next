@@ -1,0 +1,36 @@
+"""Restringe la lectura de Notas de Entrega: solo System Manager ve las de otros usuarios."""
+
+
+def _is_admin(user: str, roles: list[str] | None = None) -> bool:
+    if user == "Administrator":
+        return True
+    if roles is None:
+        import frappe
+
+        roles = frappe.get_roles(user)
+    return "System Manager" in roles
+
+
+def get_permission_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
+    import frappe
+
+    user = user or frappe.session.user
+    if _is_admin(user):
+        return ""
+    escaped = frappe.db.escape(user)
+    return (
+        "(COALESCE(NULLIF(`tabDelivery Note`.`ve_vendedor_usuario`, ''), "
+        f"`tabDelivery Note`.`owner`) = {escaped})"
+    )
+
+
+def has_permission(doc, ptype: str | None = None, user: str | None = None, **kwargs) -> bool | None:
+    import frappe
+
+    user = user or frappe.session.user
+    if _is_admin(user):
+        return None
+    seller = (getattr(doc, "ve_vendedor_usuario", None) or "").strip() or doc.owner
+    if seller != user:
+        return False
+    return None
