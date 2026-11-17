@@ -61,8 +61,8 @@ def _get_storefront_config() -> dict:
         "binance_pay_info": settings.get("binance_pay_info") or "",
         "bank_transfer_info": settings.get("bank_transfer_info") or "",
         "delivery_providers": parse_delivery_providers(settings.get("delivery_providers")),
-        "notify_order_email": (settings.get("notify_order_email") or "cimaelectronic@gmail.com").strip(),
-        "notify_whatsapp_number": (settings.get("notify_whatsapp_number") or "").strip(),
+        "notify_order_email": (settings.get("notify_order_email") or "cimaelectronic@gmail.com, alexandermigueld@gmail.com").strip(),
+        "notify_whatsapp_number": (settings.get("notify_whatsapp_number") or "+584243472198").strip(),
         "whatsapp_webhook_url": (settings.get("whatsapp_webhook_url") or "").strip(),
     }
 
@@ -307,12 +307,20 @@ def get_storefront_bootstrap() -> dict:
         as_dict=True,
     )
 
+    try:
+        from cima_ve.api.exchange_rates import get_current_exchange_rates
+
+        exchange_rate = get_current_exchange_rates()
+    except Exception:
+        exchange_rate = {"bcv_rate": 0.0, "monitor_rate": 0.0, "binance_usdt_rate": 0.0, "applied_brecha_pct": 0.0, "adjusted_rate": 0.0}
+
     return {
         "user": user_profile,
         "auth": auth,
         "categories": categories,
         "payment_methods": build_payment_methods_catalog(cfg),
         "delivery_providers": cfg["delivery_providers"],
+        "exchange_rate": exchange_rate,
         "settings": {
             "company": cfg["company"],
             "warehouse": cfg["warehouse"],
@@ -612,7 +620,24 @@ def get_my_profile_and_orders() -> dict:
         order_by="creation desc",
         limit=25,
     )
-    return {"profile": profile, "orders": orders, "invoices": invoices}
+    delivery_notes = frappe.get_all(
+        "Delivery Note",
+        filters={"customer": customer_name, "docstatus": ["<", 2]},
+        fields=[
+            "name",
+            "posting_date",
+            "grand_total",
+            "currency",
+            "status",
+            "ve_ne_estado",
+            "ve_ne_metodo_pago",
+            "ve_ne_referencia_pago",
+            "ve_ne_envio_proveedor",
+        ],
+        order_by="creation desc",
+        limit=25,
+    )
+    return {"profile": profile, "delivery_notes": delivery_notes, "orders": orders, "invoices": invoices}
 
 
 @whitelist()
@@ -738,6 +763,50 @@ def _send_storefront_order_notifications(cfg: dict, order_payload: dict) -> dict
 
 
 @whitelist(allow_guest=True)
+def upload_storefront_payment_proof(file_name: str, file_data_base64: str) -> dict:
+    """Sube una captura o comprobante de pago desde /tienda para adjuntarlo a la Nota de Entrega."""
+    import base64
+    import os
+    import frappe
+
+    clean_name = os.path.basename((file_name or "comprobante.png").strip()) or "comprobante.png"
+    ext = os.path.splitext(clean_name)[1].lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"}:
+        frappe.throw("Formato no soportado. Sube una imagen (PNG, JPG, WEBP) o PDF.")
+
+    raw_b64 = (file_data_base64 or "").strip()
+    if "," in raw_b64 and raw_b64.startswith("data:"):
+        raw_b64 = raw_b64.split(",", 1)[1]
+    if not raw_b64:
+        frappe.throw("El archivo está vacío.")
+
+    try:
+        content = base64.b64decode(raw_b64)
+    except Exception:
+        frappe.throw("No se pudo decodificar el archivo adjunto.")
+
+    if len(content) > 5 * 1024 * 1024:
+        frappe.throw("El comprobante supera el tamaño máximo permitido de 5 MB.")
+
+    file_doc = frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": clean_name,
+            "is_private": 0,
+            "content": content,
+        }
+    )
+    file_doc.flags.ignore_permissions = True
+    file_doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {
+        "file_id": file_doc.name,
+        "file_url": file_doc.file_url,
+        "file_name": file_doc.file_name,
+    }
+
+
+@whitelist(allow_guest=True)
 def place_storefront_order(
     items: str | list[dict],
     payment_method: str = "cashea",
@@ -745,9 +814,11 @@ def place_storefront_order(
     customer_info: str | dict | None = None,
     delivery_provider: str = "",
 ) -> dict:
-    """Crea el pedido (Sales Order) en ERPNext, incluye envío, y notifica por Correo y WhatsApp."""
+    """Crea una Nota de Entrega (Delivery Note) desde /tienda con comprobante, envío y notificación Email/WhatsApp."""
     import frappe
-    from frappe.utils import add_days, today
+    from cima_ve.api.delivery_notes import _get_auto_discount_config, send_delivery_note_created_notifications
+    from cima_ve.api.seller_pos import _apply_required_sales_metadata
+    from cima_ve.services.delivery_note_service import compute_delivery_note_discounts
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
     if not parsed_items:
@@ -814,40 +885,109 @@ def place_storefront_order(
         if not effective_name:
             effective_name = frappe.db.get_value("Customer", customer_name, "customer_name") or effective_email
 
-    so = frappe.new_doc("Sales Order")
-    so.customer = customer_name
-    so.company = cfg["company"]
-    so.order_type = "Shopping Cart"
-    so.transaction_date = today()
-    so.delivery_date = add_days(today(), 1)
-    so.selling_price_list = cfg["price_list"]
-    so.currency = "USD"
-    if cfg["warehouse"]:
-        so.set_warehouse = cfg["warehouse"]
-
+    method_catalog = {m["id"]: m["label"] for m in build_payment_methods_catalog(cfg)}
+    method_label = method_catalog.get(payment_method, payment_method)
     ref_code = (pay_details.get("reference") or "").strip()
-    so.po_no = f"{payment_method.upper()} | {provider['label']}{': ' + ref_code if ref_code else ''}"[:140]
+    bank_info = (pay_details.get("bank") or "").strip()
+    screenshot_url = (pay_details.get("screenshot_url") or "").strip()
+    screenshot_file_id = (pay_details.get("screenshot_file_id") or "").strip()
+    payment_notes = (pay_details.get("notes") or "").strip()
 
+    dn_items = []
     for row in parsed_items:
         qty = float(row.get("qty") or 0)
         if qty <= 0:
             continue
-        so.append(
-            "items",
-            {
-                "item_code": row.get("item_code"),
-                "qty": qty,
-                "warehouse": cfg["warehouse"],
-            },
-        )
+        item_entry = {
+            "item_code": row.get("item_code"),
+            "qty": qty,
+        }
+        if cfg["warehouse"]:
+            item_entry["warehouse"] = cfg["warehouse"]
+        dn_items.append(item_entry)
 
-    if not so.items:
+    if not dn_items:
         frappe.throw("No hay productos válidos en el pedido.")
+
+    note_parts = [
+        f"Pedido Tienda Web (/tienda)",
+        f"Método reportado: {method_label}",
+        f"Envío: {provider['label']} (${shipping_cost:.2f})",
+    ]
+    if address_text:
+        note_parts.append(f"Dirección: {address_text}")
+    if ref_code:
+        note_parts.append(f"Ref: {ref_code}")
+    if bank_info:
+        note_parts.append(f"Banco/Emisor: {bank_info}")
+    if effective_phone:
+        note_parts.append(f"Teléfono: {effective_phone}")
+    if payment_notes:
+        note_parts.append(f"Nota pago: {payment_notes}")
+    if pay_details.get("token_summary"):
+        note_parts.append(f"Token navegador: {pay_details.get('token_summary')}")
+
+    dn = frappe.get_doc(
+        {
+            "doctype": "Delivery Note",
+            "company": cfg["company"],
+            "customer": customer_name,
+            "currency": "USD",
+            "selling_price_list": cfg["price_list"] or None,
+            "set_warehouse": cfg["warehouse"] or None,
+            "ignore_pricing_rule": 0,
+            "ve_vendedor_usuario": "Tienda Web",
+            "ve_vendedor_nombre": "Tienda Web (/tienda)",
+            "ve_ne_estado": "Pendiente",
+            "remarks": " | ".join(note_parts),
+            "items": dn_items,
+        }
+    )
+
+    if dn.meta.has_field("ve_ne_origen"):
+        dn.ve_ne_origen = "Tienda Web"
+    if dn.meta.has_field("ve_ne_metodo_pago"):
+        dn.ve_ne_metodo_pago = method_label
+    if dn.meta.has_field("ve_ne_referencia_pago"):
+        dn.ve_ne_referencia_pago = ref_code
+    if dn.meta.has_field("ve_ne_banco_pago"):
+        dn.ve_ne_banco_pago = bank_info
+    if dn.meta.has_field("ve_ne_comprobante_url"):
+        dn.ve_ne_comprobante_url = screenshot_url
+    if dn.meta.has_field("ve_ne_envio_proveedor"):
+        dn.ve_ne_envio_proveedor = provider["label"]
+    if dn.meta.has_field("ve_ne_envio_costo"):
+        dn.ve_ne_envio_costo = shipping_cost
+    if dn.meta.has_field("ve_ne_envio_direccion"):
+        dn.ve_ne_envio_direccion = address_text
+    if dn.meta.has_field("ve_ne_cliente_email"):
+        dn.ve_ne_cliente_email = effective_email
+    if dn.meta.has_field("ve_ne_cliente_telefono"):
+        dn.ve_ne_cliente_telefono = effective_phone
+
+    _apply_required_sales_metadata(dn, sales_channel="Detal")
+    dn.run_method("set_missing_values")
+    dn.run_method("calculate_taxes_and_totals")
+
+    subtotal_before_global = round(float(dn.net_total or dn.total or dn.grand_total or 0.0), 2)
+    auto_disc_enabled, auto_disc_tiers = _get_auto_discount_config()
+    disc_info = compute_delivery_note_discounts(
+        subtotal=subtotal_before_global,
+        auto_discount_enabled=auto_disc_enabled,
+        tiers=auto_disc_tiers,
+        manual_discount_enabled=False,
+        manual_discount_percentage=0.0,
+    )
+    if disc_info["total_discount_amount"] > 0:
+        dn.apply_discount_on = "Net Total"
+        dn.discount_amount = disc_info["total_discount_amount"]
+        dn.additional_discount_percentage = disc_info["effective_discount_pct"]
+        dn.run_method("calculate_taxes_and_totals")
 
     if shipping_cost > 0:
         ship_account = _resolve_shipping_account(cfg["company"])
         if ship_account:
-            so.append(
+            dn.append(
                 "taxes",
                 {
                     "charge_type": "Actual",
@@ -856,86 +996,62 @@ def place_storefront_order(
                     "tax_amount": shipping_cost,
                 },
             )
+            dn.run_method("calculate_taxes_and_totals")
 
-    from cima_ve.api.seller_pos import _apply_required_sales_metadata
+    if dn.meta.has_field("ve_ne_subtotal_sin_descuento"):
+        dn.ve_ne_subtotal_sin_descuento = disc_info["subtotal"]
+    if dn.meta.has_field("ve_ne_descuento_auto_pct"):
+        dn.ve_ne_descuento_auto_pct = disc_info["auto_discount_pct"]
+    if dn.meta.has_field("ve_ne_descuento_auto_monto"):
+        dn.ve_ne_descuento_auto_monto = disc_info["auto_discount_amount"]
+    if dn.meta.has_field("ve_ne_descuento_auto_etiqueta"):
+        dn.ve_ne_descuento_auto_etiqueta = disc_info["auto_discount_label"]
+    if dn.meta.has_field("ve_ne_monto_total"):
+        dn.ve_ne_monto_total = round(float(dn.grand_total or 0.0), 2)
+    if dn.meta.has_field("ve_ne_monto_pagado"):
+        dn.ve_ne_monto_pagado = 0.0
+    if dn.meta.has_field("ve_ne_saldo_pendiente"):
+        dn.ve_ne_saldo_pendiente = round(float(dn.grand_total or 0.0), 2)
 
-    _apply_required_sales_metadata(so, sales_channel="Detal")
-    so.insert(ignore_permissions=True)
-    so.submit()
+    dn.flags.ignore_permissions = True
+    dn.insert(ignore_permissions=True)
+    dn.submit()
+    dn.reload()
 
-    note_parts = [
-        f"Método de pago web: {payment_method}",
-        f"Envío: {provider['label']} (${shipping_cost:.2f})",
-    ]
-    if address_text:
-        note_parts.append(f"Dirección: {address_text}")
-    if ref_code:
-        note_parts.append(f"Referencia: {ref_code}")
-    if pay_details.get("bank"):
-        note_parts.append(f"Banco/Emisor: {pay_details.get('bank')}")
-    if effective_phone:
-        note_parts.append(f"Teléfono: {effective_phone}")
-    if pay_details.get("token_summary"):
-        note_parts.append(f"Token navegador: {pay_details.get('token_summary')}")
-    so.add_comment("Comment", " | ".join(note_parts))
+    if screenshot_file_id and frappe.db.exists("File", screenshot_file_id):
+        frappe.db.set_value(
+            "File",
+            screenshot_file_id,
+            {"attached_to_doctype": "Delivery Note", "attached_to_name": dn.name},
+        )
 
-    result: dict = {
-        "ok": True,
-        "sales_order": so.name,
-        "grand_total": float(so.grand_total or 0),
-        "payment_method": payment_method,
-        "delivery_provider": provider,
-        "status": "Pedido registrado",
-    }
+    dn.add_comment("Comment", " | ".join(note_parts) + (f" | Comprobante: {screenshot_url}" if screenshot_url else ""))
 
-    if payment_method in {"cashea", "google_pay"}:
-        try:
-            from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-
-            si = make_sales_invoice(so.name, ignore_permissions=True)
-            _apply_required_sales_metadata(si, sales_channel="Detal")
-            si.insert(ignore_permissions=True)
-            si.submit()
-            result["sales_invoice"] = si.name
-
-            if payment_method == "cashea":
-                from cima_ve.api.cashea import create_cashea_checkout
-
-                cashea_resp = create_cashea_checkout(si.name)
-                result["cashea"] = cashea_resp
-                result["status"] = "Pendiente de pago en Cashea"
-            elif payment_method == "google_pay":
-                si.add_comment("Comment", f"Pago Google Pay / Tarjeta tokenizado: {pay_details.get('token_summary') or 'Simulación'}")
-                result["status"] = "Pago autorizado (Google Pay)"
-        except Exception as exc:
-            result["invoice_warning"] = str(exc)
-
-    notif_items = [
-        {
-            "item_code": r.item_code,
-            "item_name": r.item_name or r.item_code,
-            "qty": float(r.qty or 0),
-            "rate": float(r.rate or 0),
-        }
-        for r in so.items
-    ]
-    notif_result = _send_storefront_order_notifications(
-        cfg,
-        {
-            "order_id": so.name,
-            "customer_name": effective_name,
+    notif_result = send_delivery_note_created_notifications(
+        dn,
+        extra_info={
+            "origin": "Tienda Web",
+            "delivery_provider": provider["label"],
+            "delivery_cost": shipping_cost,
+            "delivery_address": address_text,
             "customer_email": effective_email,
             "customer_phone": effective_phone,
-            "address": address_text,
-            "delivery_label": provider["label"],
-            "delivery_cost": shipping_cost,
-            "payment_method": payment_method,
+            "payment_method": method_label,
             "payment_reference": ref_code,
-            "items": notif_items,
-            "grand_total": float(so.grand_total or 0),
+            "payment_bank": bank_info,
+            "screenshot_url": screenshot_url,
         },
     )
-    result["notifications"] = notif_result
 
     frappe.db.commit()
-    return result
+    return {
+        "ok": True,
+        "delivery_note": dn.name,
+        "sales_order": dn.name,
+        "grand_total": float(dn.grand_total or 0),
+        "payment_method": payment_method,
+        "payment_method_label": method_label,
+        "delivery_provider": provider,
+        "status": "Nota de Entrega registrada (Pendiente de verificación)",
+        "notifications": notif_result,
+    }

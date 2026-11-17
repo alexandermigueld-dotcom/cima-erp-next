@@ -22,3 +22,9 @@ doc_events = {
         "on_submit": "cima_ve.overrides.sales_invoice.on_submit_fiscal_stamp",
     }
 }
+
+scheduler_events = {
+    "hourly": [
+        "cima_ve.api.exchange_rates.sync_exchange_rates_job",
+    ]
+}

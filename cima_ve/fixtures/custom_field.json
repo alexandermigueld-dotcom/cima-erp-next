@@ -426,5 +426,105 @@
   "name": "Delivery Note-ve_ne_descuento_manual_monto",
   "precision": "2",
   "read_only": 1
+ },
+ {
+  "default": "Facturación Rápida",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_origen",
+  "fieldtype": "Select",
+  "insert_after": "ve_ne_descuento_manual_monto",
+  "label": "Origen (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_origen",
+  "options": "Facturación Rápida\nTienda Web",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_referencia_pago",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_origen",
+  "label": "Referencia de Pago Reportada",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_referencia_pago"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_banco_pago",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_referencia_pago",
+  "label": "Banco / Emisor Reportado",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_banco_pago"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_comprobante_url",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_banco_pago",
+  "label": "Captura / Comprobante Reportado",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_comprobante_url"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_envio_proveedor",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_comprobante_url",
+  "label": "Proveedor de Envío",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_envio_proveedor",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_envio_costo",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_envio_proveedor",
+  "label": "Costo de Envío ($)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_envio_costo",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_envio_direccion",
+  "fieldtype": "Small Text",
+  "insert_after": "ve_ne_envio_costo",
+  "label": "Dirección / Agencia de Entrega",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_envio_direccion",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_cliente_email",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_envio_direccion",
+  "label": "Correo del Cliente",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_cliente_email",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_cliente_telefono",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_cliente_email",
+  "label": "Teléfono / WhatsApp del Cliente",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_cliente_telefono",
+  "read_only": 1
  }
 ]

@@ -343,3 +343,133 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
         },
         "notes": normalized,
     }
+
+
+DEFAULT_NOTIFICATION_EMAILS = ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"]
+DEFAULT_NOTIFICATION_WHATSAPP = "+584243472198"
+
+
+def parse_notification_emails(raw_emails: str | None) -> list[str]:
+    """Parsea una lista de correos separados por coma/punto y coma, con fallback a los correos por defecto."""
+    if not raw_emails or not str(raw_emails).strip():
+        return list(DEFAULT_NOTIFICATION_EMAILS)
+
+    seen: set[str] = set()
+    emails: list[str] = []
+    for part in str(raw_emails).replace(";", ",").split(","):
+        addr = part.strip()
+        if addr and "@" in addr and addr.lower() not in seen:
+            seen.add(addr.lower())
+            emails.append(addr)
+    return emails or list(DEFAULT_NOTIFICATION_EMAILS)
+
+
+def build_delivery_note_notification_payload(
+    *,
+    delivery_note: str,
+    customer_name: str,
+    seller_name: str = "",
+    origin: str = "Facturación Rápida",
+    items: list[dict] | None = None,
+    grand_total: float = 0.0,
+    bs_rate: float = 0.0,
+    discount_total: float = 0.0,
+    delivery_provider: str = "",
+    delivery_cost: float = 0.0,
+    delivery_address: str = "",
+    customer_email: str = "",
+    customer_phone: str = "",
+    payment_method: str = "",
+    payment_reference: str = "",
+    payment_bank: str = "",
+    screenshot_url: str = "",
+    whatsapp_number: str | None = None,
+    email_recipients_raw: str | None = None,
+) -> dict:
+    """Construye el asunto, HTML, texto WhatsApp y enlace wa.me al crear cualquier Nota de Entrega."""
+    from cima_ve.services.storefront_service import build_whatsapp_link
+
+    total_usd = round(float(grand_total or 0.0), 2)
+    total_bs = round(total_usd * float(bs_rate or 0.0), 2) if float(bs_rate or 0.0) > 0 else 0.0
+    target_wa = (whatsapp_number or "").strip() or DEFAULT_NOTIFICATION_WHATSAPP
+    recipients = parse_notification_emails(email_recipients_raw)
+
+    item_lines_txt: list[str] = []
+    item_rows_html: list[str] = []
+    for row in items or []:
+        name = str(row.get("item_name") or row.get("item_code") or "Producto")
+        qty = float(row.get("qty") or 0)
+        rate = float(row.get("rate") or 0)
+        amt = round(float(row.get("amount") if row.get("amount") is not None else qty * rate), 2)
+        item_lines_txt.append(f"• {name} x{qty:g} (${amt:.2f})")
+        item_rows_html.append(
+            f"<li><strong>{name}</strong> — Cant: {qty:g} × ${rate:.2f} = <strong>${amt:.2f}</strong></li>"
+        )
+
+    subject = f"Nota de Entrega creada: {delivery_note} — {customer_name} (${total_usd:.2f})"
+
+    text_lines = [
+        f"Nueva Nota de Entrega creada: {delivery_note}",
+        f"Origen: {origin}",
+        f"Cliente: {customer_name}",
+    ]
+    if seller_name:
+        text_lines.append(f"Vendedor: {seller_name}")
+    if customer_email:
+        text_lines.append(f"Correo cliente: {customer_email}")
+    if customer_phone:
+        text_lines.append(f"Teléfono cliente: {customer_phone}")
+    if delivery_provider:
+        ship_txt = f"{delivery_provider} (${float(delivery_cost or 0.0):.2f})" if float(delivery_cost or 0.0) > 0 else delivery_provider
+        text_lines.append(f"Envío: {ship_txt}")
+    if delivery_address:
+        text_lines.append(f"Dirección: {delivery_address}")
+    if payment_method:
+        pay_txt = payment_method
+        if payment_reference:
+            pay_txt += f" | Ref: {payment_reference}"
+        if payment_bank:
+            pay_txt += f" | Banco: {payment_bank}"
+        text_lines.append(f"Pago reportado: {pay_txt}")
+    if discount_total > 0:
+        text_lines.append(f"Descuento aplicado: -${float(discount_total):.2f}")
+    text_lines.append("Resumen:")
+    text_lines.extend(item_lines_txt or ["• Sin ítems detallados"])
+    if total_bs > 0:
+        text_lines.append(f"TOTAL: ${total_usd:.2f} (Bs. {total_bs:,.2f})")
+    else:
+        text_lines.append(f"TOTAL: ${total_usd:.2f}")
+
+    text_msg = "\n".join(text_lines)
+
+    bs_html = f" <span style='color:#475569;font-size:14px;'>(Bs. {total_bs:,.2f})</span>" if total_bs > 0 else ""
+    extra_html_rows = ""
+    if seller_name:
+        extra_html_rows += f"<p><strong>Vendedor:</strong> {seller_name}</p>"
+    if customer_email or customer_phone:
+        extra_html_rows += f"<p><strong>Contacto cliente:</strong> {customer_email or '-'} | {customer_phone or '-'}</p>"
+    if delivery_provider:
+        extra_html_rows += f"<p><strong>Envío:</strong> {delivery_provider} (${float(delivery_cost or 0.0):.2f}) {f'— {delivery_address}' if delivery_address else ''}</p>"
+    if payment_method:
+        extra_html_rows += f"<p><strong>Pago reportado:</strong> {payment_method} {f'| Ref: <strong>{payment_reference}</strong>' if payment_reference else ''} {f'| Banco: {payment_bank}' if payment_bank else ''}</p>"
+    if screenshot_url:
+        extra_html_rows += f"<p><strong>Comprobante adjunto:</strong> {screenshot_url}</p>"
+    if discount_total > 0:
+        extra_html_rows += f"<p><strong>Descuento aplicado:</strong> -${float(discount_total):.2f}</p>"
+
+    html_msg = (
+        f"<h3>Nueva Nota de Entrega: {delivery_note}</h3>"
+        f"<p><strong>Origen:</strong> {origin} &nbsp;|&nbsp; <strong>Cliente:</strong> {customer_name}</p>"
+        f"{extra_html_rows}"
+        f"<ul>{''.join(item_rows_html)}</ul>"
+        f"<p style='font-size:16px;'><strong>Total Nota de Entrega: ${total_usd:.2f}</strong>{bs_html}</p>"
+    )
+
+    return {
+        "subject": subject,
+        "text": text_msg,
+        "html": html_msg,
+        "email_recipients": recipients,
+        "whatsapp_number": target_wa,
+        "whatsapp_url": build_whatsapp_link(target_wa, text_msg),
+    }

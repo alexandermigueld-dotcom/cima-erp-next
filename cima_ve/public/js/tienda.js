@@ -600,7 +600,9 @@
     if (m.requires_reference) {
       extraHtml += `
         <div class="cima-field"><label>Número de Referencia / TXID *</label><input id="pay-ref" placeholder="Ej. 00123456"></div>
-        <div class="cima-field"><label>Banco / Emisor</label><input id="pay-bank" placeholder="Ej. Banesco / Binance / Titular"></div>`;
+        <div class="cima-field"><label>Banco / Emisor / Teléfono</label><input id="pay-bank" placeholder="Ej. Banesco / 0412-1234567 / Binance"></div>
+        <div class="cima-field"><label>Captura de Pantalla / Comprobante (Recomendado)</label><input id="pay-screenshot" type="file" accept="image/*,.pdf"></div>
+        <div class="cima-field"><label>Detalles adicionales del pago (Opcional)</label><input id="pay-notes" placeholder="Hora, titular u observación"></div>`;
     }
     if (m.id === "cashea") {
       extraHtml += `<div style="font-size:13px;font-weight:700;color:#4338ca;">Inicial hoy (40%): ${money(t.cashea.down_payment_usd)} • 3 cuotas de ${money(t.cashea.installment_usd)}</div>`;
@@ -614,12 +616,20 @@
       deliveryDescEl.textContent = `${dp.description || dp.label} ${dp.cost > 0 ? "• Costo: " + money(dp.cost) : "• Sin costo"}`;
     }
 
+    const fxRate = Number(state.bootstrap?.exchange_rate?.adjusted_rate || state.bootstrap?.exchange_rate?.bcv_rate || 0);
+    const totalBs = fxRate > 0 ? Number(t.grand_total || 0) * fxRate : 0;
+    const bsRowHtml =
+      totalBs > 0
+        ? `<div class="cima-total-row" style="font-size:12px;color:#475569;"><span>Equivalente Bs (Tasa ${fxRate.toFixed(2)}):</span><strong>Bs. ${totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>`
+        : "";
+
     document.getElementById("chk-totals-summary").innerHTML = `
       <div class="cima-total-row"><span>Base imponible:</span><strong>${money(t.taxable_base)}</strong></div>
       <div class="cima-total-row"><span>IVA (16%):</span><strong>${money(t.iva_amount)}</strong></div>
       ${t.igtf_amount > 0 ? `<div class="cima-total-row"><span>IGTF (3%):</span><strong>${money(t.igtf_amount)}</strong></div>` : ""}
       <div class="cima-total-row"><span>Envío (${escapeHtml(dp?.label || "Retiro")}):</span><strong>${Number(t.shipping_cost || 0) > 0 ? money(t.shipping_cost) : "Gratis"}</strong></div>
-      <div class="cima-total-row cima-total-grand"><span>Total a pagar:</span><span>${money(t.grand_total)}</span></div>`;
+      <div class="cima-total-row cima-total-grand"><span>Total a pagar:</span><span>${money(t.grand_total)}</span></div>
+      ${bsRowHtml}`;
   }
 
   async function tryBrowserGooglePay(totalUsd) {
@@ -650,17 +660,40 @@
     return `BrowserTokenSim:${Date.now()}`;
   }
 
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("No se pudo leer la imagen del comprobante."));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function submitOrder() {
     const btn = document.getElementById("btn-confirm-order");
     btn.disabled = true;
-    btn.textContent = "Procesando pedido...";
+    btn.textContent = "Procesando Nota de Entrega...";
     try {
       const paymentDetails = {};
       if (document.getElementById("pay-ref")) {
         paymentDetails.reference = document.getElementById("pay-ref").value.trim();
         paymentDetails.bank = document.getElementById("pay-bank")?.value.trim() || "";
+        paymentDetails.notes = document.getElementById("pay-notes")?.value.trim() || "";
         if (!paymentDetails.reference) {
           throw new Error("Ingresa el número de referencia de tu pago.");
+        }
+        const fileInput = document.getElementById("pay-screenshot");
+        const proofFile = fileInput && fileInput.files && fileInput.files[0];
+        if (proofFile) {
+          btn.textContent = "Subiendo comprobante...";
+          const dataUrl = await readFileAsDataUrl(proofFile);
+          const uploaded = await apiCall("cima_ve.api.storefront.upload_storefront_payment_proof", {
+            file_name: proofFile.name,
+            file_data_base64: dataUrl,
+          });
+          paymentDetails.screenshot_url = uploaded?.file_url || "";
+          paymentDetails.screenshot_file_id = uploaded?.file_id || "";
+          btn.textContent = "Procesando Nota de Entrega...";
         }
       }
       if (state.selectedPayment === "google_pay") {
@@ -684,16 +717,7 @@
 
       state.cart = [];
       saveCart();
-      const casheaHtml = resp.cashea
-        ? `<div style="background:#eef2ff;padding:12px;border-radius:8px;margin:12px 0;">
-             <strong>Orden Cashea: ${escapeHtml(resp.cashea.order_id)}</strong><br>
-             Inicial: ${money(resp.cashea.down_payment_usd)} • Cuotas: ${resp.cashea.installments}x ${money(resp.cashea.installment_usd)}<br>
-             <a href="${escapeHtml(resp.cashea.checkout_url)}" target="_blank" class="cima-btn-primary" style="display:inline-block;margin-top:8px;text-decoration:none;">
-               Ir a pagar con Cashea
-             </a>
-           </div>`
-        : "";
-      const waStoreUrl = resp.notifications?.store_whatsapp_url || "";
+      const waStoreUrl = resp.notifications?.whatsapp_url || resp.notifications?.store_whatsapp_url || "";
       const waHtml = waStoreUrl
         ? `<div style="margin:10px 0;">
              <a href="${escapeHtml(waStoreUrl)}" target="_blank" class="cima-btn-outline" style="display:inline-block;text-decoration:none;border-color:#16a34a;color:#15803d;">
@@ -705,10 +729,10 @@
       document.getElementById("checkout-modal-body").innerHTML = `
         <div style="text-align:center;padding:20px 10px;">
           <div style="font-size:42px;">✅</div>
-          <h2>¡Pedido confirmado!</h2>
-          <p>Orden ERPNext: <strong>${escapeHtml(resp.sales_order)}</strong> ${resp.sales_invoice ? `• Factura: <strong>${escapeHtml(resp.sales_invoice)}</strong>` : ""}</p>
-          <p>Envío: <strong>${escapeHtml(resp.delivery_provider?.label || "Retiro en Tienda")}</strong> • Estado: <strong>${escapeHtml(resp.status)}</strong></p>
-          ${casheaHtml}
+          <h2>¡Nota de Entrega registrada!</h2>
+          <p>Nota de Entrega: <strong>${escapeHtml(resp.delivery_note || resp.sales_order)}</strong></p>
+          <p>Método reportado: <strong>${escapeHtml(resp.payment_method_label || resp.payment_method)}</strong> • Envío: <strong>${escapeHtml(resp.delivery_provider?.label || "Retiro en Tienda")}</strong></p>
+          <p style="font-size:13px;color:#475569;">Estado: <strong>${escapeHtml(resp.status)}</strong></p>
           ${waHtml}
           <button type="button" class="cima-btn-primary" onclick="document.getElementById('checkout-modal').classList.add('hidden')">Seguir comprando</button>
         </div>`;

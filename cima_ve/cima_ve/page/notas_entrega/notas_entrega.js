@@ -182,6 +182,16 @@ class CimaNotasEntrega {
 
 	renderKpis() {
 		const s = this.data?.summary || {};
+		const fx = this.data?.config?.exchange_rate || {};
+		const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
+		const fxCard =
+			fxRate > 0
+				? `<div class="cima-ne-kpi" style="border-left:3px solid #2563eb;">
+					<div class="cima-ne-kpi-label">Tasa Ajustada (BCV + Brecha ${Number(fx.applied_brecha_pct || 0).toFixed(1)}%)</div>
+					<div class="cima-ne-kpi-val" style="color:#1d4ed8;">Bs. ${fxRate.toFixed(2)}</div>
+					<div class="cima-ne-kpi-sub">BCV ${Number(fx.bcv_rate || 0).toFixed(2)} · Binance ${Number(fx.binance_usdt_rate || 0).toFixed(2)}</div>
+				</div>`
+				: "";
 		this.wrapper.find("#ne-kpis").html(`
 			<div class="cima-ne-kpi">
 				<div class="cima-ne-kpi-label">Pendientes por Cobrar</div>
@@ -203,6 +213,7 @@ class CimaNotasEntrega {
 				<div class="cima-ne-kpi-val">${s.total_count || 0}</div>
 				<div class="cima-ne-kpi-sub">Historial completo</div>
 			</div>
+			${fxCard}
 		`);
 	}
 
@@ -274,7 +285,15 @@ class CimaNotasEntrega {
 						  `</div>`
 						: "";
 
-					let resolutionHtml = `<span class="text-muted small">Sin procesar</span>`;
+					const reportedProofHtml = (n.ve_ne_metodo_pago || n.ve_ne_referencia_pago || n.ve_ne_comprobante_url)
+						? `<div class="mt-1 p-1 small" style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:4px;">
+							${n.ve_ne_metodo_pago ? `<div><strong>Reportado:</strong> ${frappe.utils.escape_html(n.ve_ne_metodo_pago)}</div>` : ""}
+							${n.ve_ne_referencia_pago ? `<div><strong>Ref:</strong> ${frappe.utils.escape_html(n.ve_ne_referencia_pago)}${n.ve_ne_banco_pago ? ` (${frappe.utils.escape_html(n.ve_ne_banco_pago)})` : ""}</div>` : ""}
+							${n.ve_ne_comprobante_url ? `<div><a href="${encodeURI(n.ve_ne_comprobante_url)}" target="_blank" rel="noopener">📎 Ver captura reportada</a></div>` : ""}
+						</div>`
+						: "";
+
+					let resolutionHtml = `<span class="text-muted small">Sin procesar</span>${reportedProofHtml}`;
 					if (n.ve_ne_estado === "Pagada" || n.ve_ne_estado === "Pago Parcial") {
 						const taxTags = [
 							n.ve_ne_aplica_iva ? "IVA" : "Sin IVA",
@@ -293,6 +312,7 @@ class CimaNotasEntrega {
 								<span class="text-muted">${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")}</span><br>
 								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
 								${n.ve_ne_factura && isAdmin ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
+								${n.ve_ne_comprobante_url && !history.length ? `<br><a href="${encodeURI(n.ve_ne_comprobante_url)}" target="_blank" rel="noopener">📎 Ver captura</a>` : ""}
 								${historyHtml}
 							</div>
 						`;
@@ -317,6 +337,11 @@ class CimaNotasEntrega {
 							: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
 						: `<span class="text-muted small">Solo lectura</span>`;
 
+					const fx = this.data?.config?.exchange_rate || {};
+					const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
+					const totalBs = fxRate > 0 ? Number(n.total_to_pay || n.amount || 0) * fxRate : 0;
+					const bsLine = totalBs > 0 ? `<div class="small text-muted">Bs. ${totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : "";
+
 					const origSub = Number(n.subtotal_before_discount || 0);
 					const baseDiscPrefix =
 						n.has_global_discount && origSub > Number(n.amount || 0) + 0.01
@@ -324,16 +349,24 @@ class CimaNotasEntrega {
 							: "";
 					const amountCellHtml =
 						n.ve_ne_estado === "Pago Parcial"
-							? `${baseDiscPrefix}<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div><div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
-							: `${baseDiscPrefix}$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}`;
+							? `${baseDiscPrefix}<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div>${bsLine}<div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
+							: `${baseDiscPrefix}$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}${bsLine}`;
+
+					const originBadge =
+						n.ve_ne_origen === "Tienda Web"
+							? `<div><span class="label" style="background:#dbeafe;color:#1e40af;font-size:10px;">Tienda Web</span></div>`
+							: "";
+					const shipInfo = n.ve_ne_envio_proveedor
+						? `<div class="small text-muted">Envío: ${frappe.utils.escape_html(n.ve_ne_envio_proveedor)}${Number(n.ve_ne_envio_costo || 0) > 0 ? ` ($${Number(n.ve_ne_envio_costo).toFixed(2)})` : ""}</div>`
+						: "";
 
 					return `
 						<tr>
-							<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a></td>
+							<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a>${originBadge}</td>
 							<td>${frappe.utils.escape_html(n.posting_date || "")}</td>
-							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}</td>
+							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}${n.ve_ne_cliente_telefono ? `<div class="small text-muted">${frappe.utils.escape_html(n.ve_ne_cliente_telefono)}</div>` : ""}</td>
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
-							<td class="small">${itemsText}${moreItems}${globalDiscBadge}${noteDiscountBadge}</td>
+							<td class="small">${itemsText}${moreItems}${shipInfo}${globalDiscBadge}${noteDiscountBadge}</td>
 							<td class="text-right font-weight-bold">${amountCellHtml}</td>
 							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
 							<td>${resolutionHtml}</td>
@@ -416,6 +449,7 @@ class CimaNotasEntrega {
 					label: "Número de Referencia",
 					fieldname: "reference",
 					fieldtype: "Data",
+					default: note.ve_ne_referencia_pago || "",
 					description: "Número de referencia o confirmación del pago (no aplica para efectivo).",
 				},
 				{
@@ -443,7 +477,7 @@ class CimaNotasEntrega {
 					return;
 				}
 				const isCash = isCashMethod(values.payment_method);
-				let screenshotUrl = "";
+				let screenshotUrl = !isCash ? (note.ve_ne_comprobante_url || "") : "";
 				if (!isCash) {
 					const fileInput = d.$wrapper.find("#ne-payment-screenshot")[0];
 					const file = fileInput && fileInput.files && fileInput.files[0];

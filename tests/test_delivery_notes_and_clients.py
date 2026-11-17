@@ -4,12 +4,16 @@ import unittest
 
 from cima_ve.services.client_consumption_service import compute_client_consumption
 from cima_ve.services.delivery_note_service import (
+    DEFAULT_NOTIFICATION_EMAILS,
+    DEFAULT_NOTIFICATION_WHATSAPP,
     append_payment_history,
+    build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_partial_payment_state,
     is_cash_payment_method,
     parse_auto_discount_tiers,
+    parse_notification_emails,
     summarize_delivery_notes,
 )
 
@@ -249,6 +253,49 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn('data-action="open-delivery-notes">\n\t\t\t\t\t\t\tNotas de Entrega', vr_js)
         self.assertIn('data-action="open-client-consumption" data-admin-only="1"', vr_js)
         self.assertIn('data-action="open-metrics" data-admin-only="1"', vr_js)
+
+    def test_delivery_note_notifications_and_storefront_integration(self) -> None:
+        self.assertEqual(
+            parse_notification_emails(None),
+            ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"],
+        )
+        self.assertEqual(
+            parse_notification_emails("cimaelectronic@gmail.com, alexandermigueld@gmail.com; cimaelectronic@gmail.com"),
+            ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"],
+        )
+
+        notif = build_delivery_note_notification_payload(
+            delivery_note="DN-00099",
+            customer_name="María Pérez",
+            origin="Tienda Web",
+            items=[{"item_name": "Cable HDMI", "qty": 2, "rate": 10.0, "amount": 20.0}],
+            grand_total=25.0,
+            bs_rate=50.0,
+            delivery_provider="MRW",
+            delivery_cost=5.0,
+            payment_method="Pago Móvil",
+            payment_reference="998877",
+            screenshot_url="/files/cap.png",
+        )
+        self.assertIn("DN-00099", notif["subject"])
+        self.assertIn("$25.00", notif["subject"])
+        self.assertIn("Bs. 1,250.00", notif["text"])
+        self.assertEqual(notif["email_recipients"], DEFAULT_NOTIFICATION_EMAILS)
+        self.assertEqual(notif["whatsapp_number"], DEFAULT_NOTIFICATION_WHATSAPP)
+        self.assertIn("https://wa.me/584243472198?text=", notif["whatsapp_url"])
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        sf_py = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        tienda_js = (root / "cima_ve" / "public" / "js" / "tienda.js").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+
+        self.assertIn('"doctype": "Delivery Note"', sf_py)
+        self.assertIn("upload_storefront_payment_proof", sf_py)
+        self.assertIn("send_delivery_note_created_notifications", sf_py)
+        self.assertIn("pay-screenshot", tienda_js)
+        self.assertIn("upload_storefront_payment_proof", tienda_js)
+        self.assertIn("ve_ne_comprobante_url", ne_js)
+        self.assertIn("Tienda Web", ne_js)
 
 
 if __name__ == "__main__":

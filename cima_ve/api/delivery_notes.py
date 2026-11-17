@@ -5,7 +5,10 @@ import json
 from cima_ve.api._compat import whitelist
 from cima_ve.services.delivery_note_service import (
     DEFAULT_AUTO_DISCOUNT_TIERS,
+    DEFAULT_NOTIFICATION_EMAILS,
+    DEFAULT_NOTIFICATION_WHATSAPP,
     append_payment_history,
+    build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_partial_payment_state,
@@ -40,6 +43,109 @@ def _get_auto_discount_config() -> tuple[bool, list[dict]]:
         return enabled, parse_auto_discount_tiers(raw_tiers)
     except Exception:
         return True, [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
+
+
+def _get_exchange_rate_snapshot() -> dict:
+    try:
+        from cima_ve.api.exchange_rates import get_current_exchange_rates
+
+        return get_current_exchange_rates()
+    except Exception:
+        return {"bcv_rate": 0.0, "adjusted_rate": 0.0, "applied_brecha_pct": 0.0}
+
+
+def send_delivery_note_created_notifications(doc, extra_info: dict | None = None) -> dict:
+    """Envía resumen por correo (cimaelectronic@gmail.com, alexandermigueld@gmail.com) y WhatsApp (+584243472198)."""
+    import urllib.request
+    import frappe
+
+    extra = extra_info or {}
+    settings = frappe.get_single("Cima VE Settings")
+    raw_emails = (settings.get("notify_order_email") or "").strip() if settings.meta.has_field("notify_order_email") else ""
+    target_wa = (settings.get("notify_whatsapp_number") or "").strip() if settings.meta.has_field("notify_whatsapp_number") else ""
+    webhook_url = (settings.get("whatsapp_webhook_url") or "").strip() if settings.meta.has_field("whatsapp_webhook_url") else ""
+
+    fx = _get_exchange_rate_snapshot()
+    bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+
+    items_list = [
+        {
+            "item_code": r.item_code,
+            "item_name": r.item_name or r.item_code,
+            "qty": float(r.qty or 0),
+            "rate": float(r.rate or 0),
+            "amount": float(r.amount or 0),
+        }
+        for r in (doc.items or [])
+    ]
+
+    payload = build_delivery_note_notification_payload(
+        delivery_note=doc.name,
+        customer_name=getattr(doc, "customer_name", None) or doc.customer,
+        seller_name=getattr(doc, "ve_vendedor_nombre", None) or getattr(doc, "owner", "") or "",
+        origin=getattr(doc, "ve_ne_origen", None) or extra.get("origin") or "Facturación Rápida",
+        items=items_list,
+        grand_total=float(doc.grand_total or 0.0),
+        bs_rate=bs_rate,
+        discount_total=float(getattr(doc, "discount_amount", 0.0) or 0.0),
+        delivery_provider=getattr(doc, "ve_ne_envio_proveedor", None) or extra.get("delivery_provider") or "",
+        delivery_cost=float(getattr(doc, "ve_ne_envio_costo", None) or extra.get("delivery_cost") or 0.0),
+        delivery_address=getattr(doc, "ve_ne_envio_direccion", None) or extra.get("delivery_address") or "",
+        customer_email=getattr(doc, "ve_ne_cliente_email", None) or extra.get("customer_email") or "",
+        customer_phone=getattr(doc, "ve_ne_cliente_telefono", None) or extra.get("customer_phone") or "",
+        payment_method=getattr(doc, "ve_ne_metodo_pago", None) or extra.get("payment_method") or "",
+        payment_reference=getattr(doc, "ve_ne_referencia_pago", None) or extra.get("payment_reference") or "",
+        payment_bank=getattr(doc, "ve_ne_banco_pago", None) or extra.get("payment_bank") or "",
+        screenshot_url=getattr(doc, "ve_ne_comprobante_url", None) or extra.get("screenshot_url") or "",
+        whatsapp_number=target_wa or DEFAULT_NOTIFICATION_WHATSAPP,
+        email_recipients_raw=raw_emails or ", ".join(DEFAULT_NOTIFICATION_EMAILS),
+    )
+
+    email_sent = False
+    try:
+        frappe.sendmail(
+            recipients=payload["email_recipients"],
+            subject=payload["subject"],
+            message=payload["html"],
+            now=True,
+        )
+        email_sent = True
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Email Notification Error")
+
+    whatsapp_sent = False
+    if webhook_url:
+        try:
+            token = ""
+            try:
+                token = settings.get_password("whatsapp_api_token") or ""
+            except Exception:
+                token = ""
+            body = json.dumps(
+                {
+                    "to": payload["whatsapp_number"],
+                    "message": payload["text"],
+                    "delivery_note": doc.name,
+                    "customer_name": getattr(doc, "customer_name", None) or doc.customer,
+                    "grand_total": float(doc.grand_total or 0.0),
+                }
+            ).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(webhook_url, data=body, headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=8)
+            whatsapp_sent = True
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note WhatsApp Notification Error")
+
+    return {
+        "email_sent": email_sent,
+        "email_recipients": payload["email_recipients"],
+        "whatsapp_sent": whatsapp_sent,
+        "whatsapp_number": payload["whatsapp_number"],
+        "whatsapp_url": payload["whatsapp_url"],
+    }
 
 
 def _resolve_tax_account(company: str, keyword: str = "") -> str:
@@ -222,6 +328,8 @@ def create_quick_delivery_note(
     doc.submit()
     doc.reload()
 
+    notif_result = send_delivery_note_created_notifications(doc)
+
     return {
         "delivery_note": doc.name,
         "status": doc.status,
@@ -232,6 +340,7 @@ def create_quick_delivery_note(
         "has_discount": bool(discounted_items or disc_info["has_global_discount"]),
         "discounted_items": discounted_items,
         "discount_info": disc_info,
+        "notifications": notif_result,
         "seller": {
             "user": getattr(doc, "ve_vendedor_usuario", None) or seller_user,
             "fullname": getattr(doc, "ve_vendedor_nombre", None) or seller_name,
@@ -277,6 +386,15 @@ def get_delivery_notes(
     has_desc_auto_etiq = dn_meta.has_field("ve_ne_descuento_auto_etiqueta")
     has_desc_manual_pct = dn_meta.has_field("ve_ne_descuento_manual_pct")
     has_desc_manual_monto = dn_meta.has_field("ve_ne_descuento_manual_monto")
+    has_origen = dn_meta.has_field("ve_ne_origen")
+    has_ref_pago = dn_meta.has_field("ve_ne_referencia_pago")
+    has_banco_pago = dn_meta.has_field("ve_ne_banco_pago")
+    has_comprobante = dn_meta.has_field("ve_ne_comprobante_url")
+    has_envio_prov = dn_meta.has_field("ve_ne_envio_proveedor")
+    has_envio_costo = dn_meta.has_field("ve_ne_envio_costo")
+    has_envio_dir = dn_meta.has_field("ve_ne_envio_direccion")
+    has_cli_email = dn_meta.has_field("ve_ne_cliente_email")
+    has_cli_tel = dn_meta.has_field("ve_ne_cliente_telefono")
 
     conditions = ["dn.docstatus IN (1, 2)"]
     params: dict = {}
@@ -340,6 +458,15 @@ def get_delivery_notes(
         "dn.ve_ne_descuento_auto_etiqueta AS ve_ne_descuento_auto_etiqueta" if has_desc_auto_etiq else "'' AS ve_ne_descuento_auto_etiqueta",
         "dn.ve_ne_descuento_manual_pct AS ve_ne_descuento_manual_pct" if has_desc_manual_pct else "0 AS ve_ne_descuento_manual_pct",
         "dn.ve_ne_descuento_manual_monto AS ve_ne_descuento_manual_monto" if has_desc_manual_monto else "0 AS ve_ne_descuento_manual_monto",
+        "dn.ve_ne_origen AS ve_ne_origen" if has_origen else "'Facturación Rápida' AS ve_ne_origen",
+        "dn.ve_ne_referencia_pago AS ve_ne_referencia_pago" if has_ref_pago else "'' AS ve_ne_referencia_pago",
+        "dn.ve_ne_banco_pago AS ve_ne_banco_pago" if has_banco_pago else "'' AS ve_ne_banco_pago",
+        "dn.ve_ne_comprobante_url AS ve_ne_comprobante_url" if has_comprobante else "'' AS ve_ne_comprobante_url",
+        "dn.ve_ne_envio_proveedor AS ve_ne_envio_proveedor" if has_envio_prov else "'' AS ve_ne_envio_proveedor",
+        "dn.ve_ne_envio_costo AS ve_ne_envio_costo" if has_envio_costo else "0 AS ve_ne_envio_costo",
+        "dn.ve_ne_envio_direccion AS ve_ne_envio_direccion" if has_envio_dir else "'' AS ve_ne_envio_direccion",
+        "dn.ve_ne_cliente_email AS ve_ne_cliente_email" if has_cli_email else "'' AS ve_ne_cliente_email",
+        "dn.ve_ne_cliente_telefono AS ve_ne_cliente_telefono" if has_cli_tel else "'' AS ve_ne_cliente_telefono",
     ]
 
     rows = frappe.db.sql(
@@ -425,6 +552,7 @@ def get_delivery_notes(
         "igtf_rate": igtf_rate,
         "payment_methods": payment_options,
         "sellers": seller_options,
+        "exchange_rate": _get_exchange_rate_snapshot(),
     }
     return summarized
 

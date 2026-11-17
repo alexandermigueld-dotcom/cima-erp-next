@@ -36,7 +36,20 @@
   "whatsapp_api_token",
   "discounts_section",
   "auto_discount_enabled",
-  "auto_discount_tiers"
+  "auto_discount_tiers",
+  "exchange_rates_section",
+  "fx_auto_sync",
+  "fx_brecha_source",
+  "fx_brecha_factor_pct",
+  "fx_manual_brecha_pct",
+  "fx_bcv_rate",
+  "fx_monitor_rate",
+  "fx_binance_usdt_rate",
+  "fx_brecha_pct",
+  "fx_adjusted_rate",
+  "fx_last_updated",
+  "fx_sync_status",
+  "fx_sync_now"
  ],
  "fields": [
   {
@@ -181,13 +194,15 @@
    "label": "Notificaciones de Pedidos (Tienda Web)"
   },
   {
-   "default": "cimaelectronic@gmail.com",
+   "default": "cimaelectronic@gmail.com, alexandermigueld@gmail.com",
+   "description": "Correos separados por coma para notificar cada Nota de Entrega y pedido web.",
    "fieldname": "notify_order_email",
    "fieldtype": "Data",
-   "label": "Correo para Notificación de Pedidos"
+   "label": "Correos para Notificación de Pedidos / Notas de Entrega"
   },
   {
-   "description": "Número con código de país (ej. 584121234567) para coordinación por WhatsApp.",
+   "default": "+584243472198",
+   "description": "Número con código de país (ej. +584243472198) para coordinación por WhatsApp.",
    "fieldname": "notify_whatsapp_number",
    "fieldtype": "Data",
    "label": "WhatsApp de Coordinación de Entregas"
@@ -221,6 +236,91 @@
    "fieldname": "auto_discount_tiers",
    "fieldtype": "Small Text",
    "label": "Reglas de Descuento Automático (JSON)"
+  },
+  {
+   "fieldname": "exchange_rates_section",
+   "fieldtype": "Section Break",
+   "label": "Tasas de Cambio (BCV / Monitor / Binance) y Brecha"
+  },
+  {
+   "default": "1",
+   "description": "Sincroniza automáticamente cada hora las tasas BCV, Monitor (Paralelo) y Binance P2P USDT/VES.",
+   "fieldname": "fx_auto_sync",
+   "fieldtype": "Check",
+   "label": "Sincronización Automática de Tasas (Cada hora)"
+  },
+  {
+   "default": "Binance USDT",
+   "description": "Fuente de referencia de mercado para calcular la brecha respecto al BCV.",
+   "fieldname": "fx_brecha_source",
+   "fieldtype": "Select",
+   "label": "Fuente para Cálculo de Brecha",
+   "options": "Binance USDT\nMonitor / Paralelo\nManual"
+  },
+  {
+   "default": "100",
+   "description": "Porcentaje de la brecha a aplicar sobre la tasa BCV (100 = brecha completa, 50 = mitad de la brecha).",
+   "fieldname": "fx_brecha_factor_pct",
+   "fieldtype": "Float",
+   "label": "Factor de Brecha Aplicada (%)",
+   "precision": "2"
+  },
+  {
+   "default": "0",
+   "description": "Porcentaje de brecha manual (%) usado solo cuando la fuente es Manual.",
+   "fieldname": "fx_manual_brecha_pct",
+   "fieldtype": "Float",
+   "label": "Brecha Manual (%)",
+   "precision": "2"
+  },
+  {
+   "fieldname": "fx_bcv_rate",
+   "fieldtype": "Float",
+   "label": "Tasa BCV Oficial (Bs/USD)",
+   "precision": "4"
+  },
+  {
+   "fieldname": "fx_monitor_rate",
+   "fieldtype": "Float",
+   "label": "Tasa Monitor / Paralelo (Bs/USD)",
+   "precision": "4"
+  },
+  {
+   "fieldname": "fx_binance_usdt_rate",
+   "fieldtype": "Float",
+   "label": "Tasa Binance P2P (Bs/USDT)",
+   "precision": "4"
+  },
+  {
+   "fieldname": "fx_brecha_pct",
+   "fieldtype": "Float",
+   "label": "Brecha Aplicada (%)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fx_adjusted_rate",
+   "fieldtype": "Float",
+   "label": "Tasa Ajustada (BCV + Brecha) Bs/USD",
+   "precision": "4",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fx_last_updated",
+   "fieldtype": "Datetime",
+   "label": "Última Actualización de Tasas",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fx_sync_status",
+   "fieldtype": "Data",
+   "label": "Estado de Sincronización FX",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fx_sync_now",
+   "fieldtype": "Button",
+   "label": "Actualizar Tasas Ahora"
   }
  ],
  "issingle": 1,
