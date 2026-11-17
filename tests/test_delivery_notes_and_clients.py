@@ -165,7 +165,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
 
         seller_links = {s["link_to"] for s in ws[0]["shortcuts"]}
         admin_links = {s["link_to"] for s in ws[1]["shortcuts"]}
-        self.assertEqual(seller_links, {"venta-rapida"})
+        self.assertEqual(seller_links, {"venta-rapida", "notas-entrega"})
         self.assertIn("notas-entrega", admin_links)
         self.assertIn("clientes-consumo", admin_links)
         self.assertIn("metricas-ventas", admin_links)
@@ -219,6 +219,36 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertFalse(is_cash_payment_method("Pago Móvil / Bs"))
         self.assertFalse(is_cash_payment_method("Zelle"))
         self.assertFalse(is_cash_payment_method("Cashea"))
+
+    def test_non_admin_delivery_notes_access_and_scoping(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        dn_api = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+        ne_json = json.loads((root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.json").read_text(encoding="utf-8"))
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+
+        # create_quick_delivery_note bypasses Custom DocPerm restriction on Delivery Note for Sales User
+        self.assertIn("doc.flags.ignore_permissions = True", dn_api)
+        self.assertIn("doc.insert(ignore_permissions=True)", dn_api)
+
+        # get_delivery_notes scopes non-admin users to their own records only
+        self.assertIn('is_admin = "System Manager" in frappe.get_roles(current_user)', dn_api)
+        self.assertIn("if not is_admin:", dn_api)
+        self.assertIn('params["current_user"] = current_user', dn_api)
+
+        # notas-entrega page allows Sales User and Sales Manager
+        roles = {r["role"] for r in ne_json.get("roles", [])}
+        self.assertTrue({"Sales User", "Sales Manager", "System Manager"}.issubset(roles))
+
+        # notas_entrega.js hides admin controls for non-admins
+        self.assertIn("applyRoleUi()", ne_js)
+        self.assertIn("Mis Notas de Entrega", ne_js)
+        self.assertIn("Solo lectura", ne_js)
+
+        # venta_rapida.js exposes Notas de Entrega button to all sellers, keeping metrics/clients admin-only
+        self.assertIn('data-action="open-delivery-notes">\n\t\t\t\t\t\t\tNotas de Entrega', vr_js)
+        self.assertIn('data-action="open-client-consumption" data-admin-only="1"', vr_js)
+        self.assertIn('data-action="open-metrics" data-admin-only="1"', vr_js)
 
 
 if __name__ == "__main__":

@@ -106,6 +106,8 @@ def create_quick_delivery_note(
         dn_items.append(item_dict)
 
     seller_user = frappe.session.user
+    if not seller_user or seller_user == "Guest":
+        frappe.throw("Debes iniciar sesión para emitir una Nota de Entrega.", frappe.PermissionError)
     seller_name = frappe.utils.get_fullname(seller_user) or seller_user
 
     doc = frappe.get_doc(
@@ -215,7 +217,8 @@ def create_quick_delivery_note(
             f"-${disc_info['manual_discount_amount']:.2f}"
         ).strip(" |")
 
-    doc.insert()
+    doc.flags.ignore_permissions = True
+    doc.insert(ignore_permissions=True)
     doc.submit()
     doc.reload()
 
@@ -244,10 +247,14 @@ def get_delivery_notes(
     seller: str = "",
     search: str = "",
 ) -> dict:
-    """Lista todas las Notas de Entrega con su estado (Pendiente/Pagada/Cancelada), cliente, vendedor e ítems."""
+    """Lista Notas de Entrega. Admin ve todas; otros usuarios solo ven las propias."""
     import frappe
 
-    frappe.only_for("System Manager")
+    current_user = frappe.session.user
+    if not current_user or current_user == "Guest":
+        frappe.throw("Debes iniciar sesión para ver Notas de Entrega.", frappe.PermissionError)
+
+    is_admin = "System Manager" in frappe.get_roles(current_user)
 
     dn_meta = frappe.get_meta("Delivery Note")
     has_estado = dn_meta.has_field("ve_ne_estado")
@@ -280,7 +287,13 @@ def get_delivery_notes(
     if to_date:
         conditions.append("dn.posting_date <= %(to_date)s")
         params["to_date"] = to_date
-    if seller:
+    if not is_admin:
+        if has_vendedor_user:
+            conditions.append("COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner) = %(current_user)s")
+        else:
+            conditions.append("dn.owner = %(current_user)s")
+        params["current_user"] = current_user
+    elif seller:
         if has_vendedor_user:
             conditions.append("COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner) = %(seller)s")
         else:
@@ -385,20 +398,29 @@ def get_delivery_notes(
     elif status:
         summarized["notes"] = [n for n in summarized["notes"] if n["ve_ne_estado"] == status]
 
-    iva_rate, igtf_rate = _get_tax_rates()
-    modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
-    payment_options = modes or ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]
-    for default_m in ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
-        if default_m not in payment_options:
-            payment_options.append(default_m)
+    if is_admin:
+        iva_rate, igtf_rate = _get_tax_rates()
+        modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
+        payment_options = modes or ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]
+        for default_m in ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
+            if default_m not in payment_options:
+                payment_options.append(default_m)
 
-    sellers = sorted({n.get("seller_user") for n in rows if n.get("seller_user")})
-    seller_options = [
-        {"user": u, "fullname": frappe.utils.get_fullname(u) or u}
-        for u in sellers
-    ]
+        sellers = sorted({n.get("seller_user") for n in rows if n.get("seller_user")})
+        seller_options = [
+            {"user": u, "fullname": frappe.utils.get_fullname(u) or u}
+            for u in sellers
+        ]
+    else:
+        iva_rate, igtf_rate = 16.0, 3.0
+        payment_options = []
+        seller_options = [
+            {"user": current_user, "fullname": frappe.utils.get_fullname(current_user) or current_user}
+        ]
 
     summarized["config"] = {
+        "is_admin": is_admin,
+        "current_user": current_user,
         "iva_rate": iva_rate,
         "igtf_rate": igtf_rate,
         "payment_methods": payment_options,

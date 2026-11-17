@@ -29,12 +29,12 @@ class CimaNotasEntrega {
 			<div class="cima-ne-shell">
 				<div class="cima-ne-hero">
 					<div>
-						<h2>Control de Notas de Entrega — Cima Electronic</h2>
-						<p>Seguimiento de despachos pendientes de pago: marca como Pagado (con método e impuestos) o Cancela para devolver el stock.</p>
+						<h2 id="ne-hero-title">Control de Notas de Entrega — Cima Electronic</h2>
+						<p id="ne-hero-subtitle">Seguimiento de despachos pendientes de pago: marca como Pagado (con método e impuestos) o Cancela para devolver el stock.</p>
 					</div>
 					<div class="d-flex" style="gap:8px;flex-wrap:wrap;">
 						<button type="button" class="btn btn-sm btn-primary" data-action="go-pos">+ Nueva Nota de Entrega</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="go-clients">Clientes y Consumo</button>
+						<button type="button" class="btn btn-sm btn-default" data-action="go-clients" id="ne-btn-clients" style="display:none;">Clientes y Consumo</button>
 						<button type="button" class="btn btn-sm btn-default" data-action="refresh">Actualizar</button>
 					</div>
 				</div>
@@ -51,7 +51,7 @@ class CimaNotasEntrega {
 								<option value="Cancelada">Cancelada</option>
 							</select>
 						</div>
-						<div>
+						<div id="ne-seller-filter-wrap">
 							<label class="small text-muted">Vendedor</label>
 							<select id="ne-filter-seller" class="form-control input-sm">
 								<option value="">Todos</option>
@@ -145,11 +145,29 @@ class CimaNotasEntrega {
 			callback: (r) => {
 				if (!r.message) return;
 				this.data = r.message;
+				this.applyRoleUi();
 				this.renderSellerFilter();
 				this.renderKpis();
 				this.renderTable();
 			},
 		});
+	}
+
+	applyRoleUi() {
+		const isAdmin = Boolean(this.data?.config?.is_admin);
+		this.wrapper.find("#ne-btn-clients").toggle(isAdmin);
+		this.wrapper.find("#ne-seller-filter-wrap").toggle(isAdmin);
+		if (isAdmin) {
+			this.wrapper.find("#ne-hero-title").text("Control de Notas de Entrega — Cima Electronic");
+			this.wrapper.find("#ne-hero-subtitle").text(
+				"Seguimiento de despachos pendientes de pago: marca como Pagado (con método e impuestos) o Cancela para devolver el stock."
+			);
+		} else {
+			this.wrapper.find("#ne-hero-title").text("Mis Notas de Entrega");
+			this.wrapper.find("#ne-hero-subtitle").text(
+				"Consulta únicamente las Notas de Entrega emitidas por tu usuario."
+			);
+		}
 	}
 
 	renderSellerFilter() {
@@ -189,6 +207,7 @@ class CimaNotasEntrega {
 	}
 
 	renderTable() {
+		const isAdmin = Boolean(this.data?.config?.is_admin);
 		const notes = this.data?.notes || [];
 		const tbody = this.wrapper.find("#ne-table-body");
 		if (!notes.length) {
@@ -273,7 +292,7 @@ class CimaNotasEntrega {
 								<strong>${frappe.utils.escape_html(n.ve_ne_metodo_pago || "-")}</strong> (${frappe.utils.escape_html(taxTags)})<br>
 								<span class="text-muted">${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")}</span><br>
 								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
-								${n.ve_ne_factura ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
+								${n.ve_ne_factura && isAdmin ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
 								${historyHtml}
 							</div>
 						`;
@@ -289,12 +308,14 @@ class CimaNotasEntrega {
 
 					const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
 					const canCancel = n.ve_ne_estado === "Pendiente" && Number(n.paid_amount || 0) <= 0 && !n.ve_ne_factura;
-					const actionsHtml = isPayable
-						? `<div class="cima-ne-actions">
-							<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
-							${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
-						</div>`
-						: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`;
+					const actionsHtml = isAdmin
+						? isPayable
+							? `<div class="cima-ne-actions">
+								<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
+								${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
+							</div>`
+							: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
+						: `<span class="text-muted small">Solo lectura</span>`;
 
 					const origSub = Number(n.subtotal_before_discount || 0);
 					const baseDiscPrefix =

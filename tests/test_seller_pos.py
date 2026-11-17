@@ -123,8 +123,9 @@ class SellerPosServiceTests(unittest.TestCase):
         ws_data = json.loads(workspace_json.read_text(encoding="utf-8"))
         self.assertEqual(len(ws_data), 2)
         self.assertEqual(ws_data[0]["label"], "Facturación Rápida")
-        self.assertEqual(len(ws_data[0]["shortcuts"]), 1)
+        self.assertEqual(len(ws_data[0]["shortcuts"]), 2)
         self.assertEqual(ws_data[0]["shortcuts"][0]["link_to"], "venta-rapida")
+        self.assertEqual(ws_data[0]["shortcuts"][1]["link_to"], "notas-entrega")
         self.assertEqual(ws_data[1]["label"], "Administración Cima")
         self.assertEqual([r["role"] for r in ws_data[1]["roles"]], ["System Manager"])
         self.assertEqual(len(ws_data[1]["shortcuts"]), 4)
@@ -145,10 +146,13 @@ class SellerPosServiceTests(unittest.TestCase):
         self.assertIn("discounted_items", dn_py)
         self.assertIn("price_list_rate", dn_py)
 
-        for admin_page in ("metricas_ventas", "clientes_consumo", "notas_entrega"):
+        for admin_page in ("metricas_ventas", "clientes_consumo"):
             p_json = root / "cima_ve" / "cima_ve" / "page" / admin_page / f"{admin_page}.json"
             p_data = json.loads(p_json.read_text(encoding="utf-8"))
             self.assertEqual([r["role"] for r in p_data["roles"]], ["System Manager"], admin_page)
+
+        ne_json = json.loads((root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.json").read_text(encoding="utf-8"))
+        self.assertEqual({r["role"] for r in ne_json["roles"]}, {"Sales User", "Sales Manager", "System Manager"})
 
         for api_file in ("sales_metrics.py", "client_consumption.py", "delivery_notes.py"):
             api_text = (root / "cima_ve" / "api" / api_file).read_text(encoding="utf-8")

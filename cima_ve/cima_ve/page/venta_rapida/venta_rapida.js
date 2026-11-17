@@ -71,7 +71,7 @@ class CimaSellerPortal {
 						<button type="button" class="cima-btn-inventory" data-action="tab-inventory">
 							Ver Inventario y Precios
 						</button>
-						<button type="button" class="cima-btn-inventory" data-action="open-delivery-notes" data-admin-only="1" style="display: none;">
+						<button type="button" class="cima-btn-inventory" data-action="open-delivery-notes">
 							Notas de Entrega
 						</button>
 						<button type="button" class="cima-btn-inventory" data-action="open-client-consumption" data-admin-only="1" style="display: none;">

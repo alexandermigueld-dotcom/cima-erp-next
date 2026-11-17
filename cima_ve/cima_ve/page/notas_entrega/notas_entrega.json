@@ -12,6 +12,12 @@
  "page_name": "notas-entrega",
  "roles": [
   {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
    "role": "System Manager"
   }
  ],
