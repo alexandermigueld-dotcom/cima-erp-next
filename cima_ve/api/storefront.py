@@ -831,6 +831,9 @@ def place_storefront_order(
             delivery_provider,
             original_user=original_user,
         )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Cima VE Storefront Order Error")
+        raise
     finally:
         frappe.set_user(original_user)
 
