@@ -944,6 +944,9 @@ def place_storefront_order(
         }
     )
 
+    dn.flags.ignore_permissions = True
+    dn.flags.ignore_links = False
+
     if dn.meta.has_field("ve_ne_origen"):
         dn.ve_ne_origen = "Tienda Web"
     if dn.meta.has_field("ve_ne_metodo_pago"):

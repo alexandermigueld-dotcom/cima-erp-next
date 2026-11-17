@@ -154,6 +154,14 @@ class StorefrontServiceTests(unittest.TestCase):
         self.assertIn('"ve_vendedor_usuario": None', storefront_api)
         self.assertIn('"ve_vendedor_nombre": "Tienda Web (/tienda)"', storefront_api)
 
+    def test_storefront_order_ignores_permissions_before_set_missing_values(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        storefront_api = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        self.assertLess(
+            storefront_api.index("dn.flags.ignore_permissions = True"),
+            storefront_api.index('dn.run_method("set_missing_values")'),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
