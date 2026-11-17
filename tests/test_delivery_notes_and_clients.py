@@ -5,8 +5,11 @@ import unittest
 from cima_ve.services.client_consumption_service import compute_client_consumption
 from cima_ve.services.delivery_note_service import (
     append_payment_history,
+    compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_partial_payment_state,
+    is_cash_payment_method,
+    parse_auto_discount_tiers,
     summarize_delivery_notes,
 )
 
@@ -151,9 +154,13 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("mark_delivery_note_paid", ne_js)
         self.assertIn("paid_amount", ne_js)
         self.assertIn("Pago Parcial", ne_js)
+        self.assertIn("ne-payment-screenshot", ne_js)
+        self.assertIn("screenshot_url", ne_js)
         self.assertIn("cancel_delivery_note", ne_js)
         self.assertIn("get_client_consumption", cc_js)
         self.assertIn("create_quick_delivery_note", vr_js)
+        self.assertIn("cima-enable-discount", vr_js)
+        self.assertIn("cima-discount-pct", vr_js)
         self.assertIn("EMITIR NOTA DE ENTREGA", vr_js)
 
         seller_links = {s["link_to"] for s in ws[0]["shortcuts"]}
@@ -162,6 +169,56 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("notas-entrega", admin_links)
         self.assertIn("clientes-consumo", admin_links)
         self.assertIn("metricas-ventas", admin_links)
+
+    def test_auto_and_manual_delivery_note_discounts(self) -> None:
+        tiers = parse_auto_discount_tiers(None)
+        self.assertEqual(len(tiers), 3)
+
+        # Under $100 -> 0% auto, optional 10% manual on $40 -> $36.00
+        d40 = compute_delivery_note_discounts(40.0, auto_discount_enabled=True, tiers=tiers)
+        self.assertEqual(d40["auto_discount_pct"], 0.0)
+        self.assertEqual(d40["final_total"], 40.0)
+        self.assertFalse(d40["has_global_discount"])
+
+        d40_manual = compute_delivery_note_discounts(
+            40.0,
+            auto_discount_enabled=True,
+            tiers=tiers,
+            manual_discount_enabled=True,
+            manual_discount_percentage=10.0,
+        )
+        self.assertEqual(d40_manual["manual_discount_pct"], 10.0)
+        self.assertEqual(d40_manual["manual_discount_amount"], 4.0)
+        self.assertEqual(d40_manual["final_total"], 36.0)
+        self.assertTrue(d40_manual["has_global_discount"])
+
+        # Between $500 and $1,000 -> 4.76%
+        d600 = compute_delivery_note_discounts(600.0, auto_discount_enabled=True, tiers=tiers)
+        self.assertEqual(d600["auto_discount_pct"], 4.76)
+        self.assertEqual(d600["auto_discount_amount"], 28.56)
+        self.assertEqual(d600["final_total"], 571.44)
+
+        # Over $1,000 -> 9.09%
+        d1200 = compute_delivery_note_discounts(1200.0, auto_discount_enabled=True, tiers=tiers)
+        self.assertEqual(d1200["auto_discount_pct"], 9.09)
+        self.assertEqual(d1200["auto_discount_amount"], 109.08)
+        self.assertEqual(d1200["final_total"], 1090.92)
+
+        # Custom configurable tier added in settings
+        custom_tiers = parse_auto_discount_tiers(
+            json.dumps([{"label": "Mayorista > 2000", "min_amount": 2000, "max_amount": None, "discount_percentage": 15}])
+        )
+        d2500 = compute_delivery_note_discounts(2500.0, auto_discount_enabled=True, tiers=custom_tiers)
+        self.assertEqual(d2500["auto_discount_pct"], 15.0)
+        self.assertEqual(d2500["final_total"], 2125.0)
+
+    def test_cash_payment_method_detection(self) -> None:
+        self.assertTrue(is_cash_payment_method("Efectivo USD"))
+        self.assertTrue(is_cash_payment_method("Efectivo Bs"))
+        self.assertTrue(is_cash_payment_method("Cash"))
+        self.assertFalse(is_cash_payment_method("Pago Móvil / Bs"))
+        self.assertFalse(is_cash_payment_method("Zelle"))
+        self.assertFalse(is_cash_payment_method("Cashea"))
 
 
 if __name__ == "__main__":

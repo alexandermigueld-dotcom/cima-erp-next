@@ -3,6 +3,153 @@ from __future__ import annotations
 import json
 
 
+DEFAULT_AUTO_DISCOUNT_TIERS: list[dict] = [
+    {"label": "Compra < $100", "min_amount": 0.0, "max_amount": 99.99, "discount_percentage": 0.0},
+    {"label": "Compra $500 - $1,000", "min_amount": 500.0, "max_amount": 1000.0, "discount_percentage": 4.76},
+    {"label": "Compra > $1,000", "min_amount": 1000.01, "max_amount": None, "discount_percentage": 9.09},
+]
+
+
+def parse_auto_discount_tiers(raw_tiers: str | list | None) -> list[dict]:
+    """Parsea las reglas configurables de descuento automático por monto desde Cima VE Settings."""
+    parsed = None
+    if isinstance(raw_tiers, list):
+        parsed = raw_tiers
+    elif isinstance(raw_tiers, str) and raw_tiers.strip():
+        try:
+            candidate = json.loads(raw_tiers)
+            if isinstance(candidate, list):
+                parsed = candidate
+        except Exception:
+            parsed = None
+
+    if parsed is None:
+        return [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
+
+    tiers: list[dict] = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        if row.get("enabled") is False:
+            continue
+        try:
+            min_amt = float(row.get("min_amount") if row.get("min_amount") is not None else 0.0)
+        except (TypeError, ValueError):
+            min_amt = 0.0
+        raw_max = row.get("max_amount")
+        if raw_max in (None, ""):
+            max_amt = None
+        else:
+            try:
+                max_amt = float(raw_max)
+            except (TypeError, ValueError):
+                max_amt = None
+        try:
+            pct = float(row.get("discount_percentage") or 0.0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        pct = round(min(max(pct, 0.0), 100.0), 4)
+        label = str(row.get("label") or "").strip()
+        if not label:
+            label = f"Desde ${min_amt:g}" if max_amt is None else f"${min_amt:g} - ${max_amt:g}"
+        tiers.append(
+            {
+                "label": label,
+                "min_amount": min_amt,
+                "max_amount": max_amt,
+                "discount_percentage": pct,
+                "discount_type": str(row.get("discount_type") or "amount_tier"),
+            }
+        )
+    return tiers
+
+
+def match_auto_discount_tier(subtotal: float, tiers: list[dict] | None) -> dict | None:
+    """Devuelve la regla de descuento automático aplicable al subtotal dado."""
+    amount = round(max(float(subtotal or 0.0), 0.0), 2)
+    if amount <= 0:
+        return None
+    matches: list[dict] = []
+    for tier in tiers or []:
+        min_amt = float(tier.get("min_amount") or 0.0)
+        max_amt = tier.get("max_amount")
+        if amount + 1e-9 < min_amt:
+            continue
+        if max_amt is not None and amount - 1e-9 > float(max_amt):
+            continue
+        matches.append(tier)
+    if not matches:
+        return None
+    matches.sort(key=lambda t: (float(t.get("discount_percentage") or 0.0), float(t.get("min_amount") or 0.0)), reverse=True)
+    best = matches[0]
+    if float(best.get("discount_percentage") or 0.0) <= 0:
+        return None
+    return best
+
+
+def compute_delivery_note_discounts(
+    subtotal: float,
+    auto_discount_enabled: bool = True,
+    tiers: list[dict] | None = None,
+    manual_discount_enabled: bool = False,
+    manual_discount_percentage: float = 0.0,
+) -> dict:
+    """Calcula el descuento automático por monto y el descuento manual opcional (%) de una Nota de Entrega."""
+    base = round(max(float(subtotal or 0.0), 0.0), 2)
+
+    auto_pct = 0.0
+    auto_amount = 0.0
+    auto_label = ""
+    if auto_discount_enabled and base > 0:
+        matched = match_auto_discount_tier(base, tiers if tiers is not None else DEFAULT_AUTO_DISCOUNT_TIERS)
+        if matched:
+            auto_pct = round(float(matched.get("discount_percentage") or 0.0), 2)
+            auto_label = str(matched.get("label") or "")
+            auto_amount = round(base * (auto_pct / 100.0), 2)
+
+    after_auto = round(max(base - auto_amount, 0.0), 2)
+
+    manual_pct = 0.0
+    manual_amount = 0.0
+    if manual_discount_enabled and after_auto > 0:
+        try:
+            manual_pct = float(manual_discount_percentage or 0.0)
+        except (TypeError, ValueError):
+            manual_pct = 0.0
+        manual_pct = round(min(max(manual_pct, 0.0), 100.0), 2)
+        if manual_pct > 0:
+            manual_amount = round(after_auto * (manual_pct / 100.0), 2)
+
+    total_discount = round(min(base, auto_amount + manual_amount), 2)
+    final_total = round(max(base - total_discount, 0.0), 2)
+    effective_pct = round((total_discount / base) * 100.0, 4) if base > 0 and total_discount > 0 else 0.0
+
+    return {
+        "subtotal": base,
+        "auto_discount_enabled": bool(auto_discount_enabled),
+        "auto_discount_pct": auto_pct,
+        "auto_discount_amount": auto_amount,
+        "auto_discount_label": auto_label,
+        "manual_discount_enabled": bool(manual_discount_enabled and manual_pct > 0),
+        "manual_discount_pct": manual_pct,
+        "manual_discount_amount": manual_amount,
+        "total_discount_amount": total_discount,
+        "effective_discount_pct": effective_pct,
+        "final_total": final_total,
+        "has_global_discount": total_discount > 0,
+    }
+
+
+def is_cash_payment_method(payment_method: str | None) -> bool:
+    """Identifica si el método de pago es en efectivo (no requiere captura ni referencia)."""
+    import re
+
+    clean = (payment_method or "").strip().lower()
+    if "efectivo" in clean:
+        return True
+    return bool(re.search(r"\bcash\b", clean))
+
+
 def compute_delivery_note_settlement_totals(
     net_total: float,
     apply_iva: bool = False,
@@ -161,6 +308,26 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
         item["paid_amount"] = paid_amount
         item["remaining_amount"] = remaining_amount
         item["payment_history"] = history
+        auto_disc_pct = round(float(row.get("ve_ne_descuento_auto_pct") or 0.0), 2)
+        auto_disc_amt = round(float(row.get("ve_ne_descuento_auto_monto") or 0.0), 2)
+        manual_disc_pct = round(float(row.get("ve_ne_descuento_manual_pct") or 0.0), 2)
+        manual_disc_amt = round(float(row.get("ve_ne_descuento_manual_monto") or 0.0), 2)
+        global_disc_amt = round(float(row.get("discount_amount") or (auto_disc_amt + manual_disc_amt) or 0.0), 2)
+        subtotal_before = round(
+            float(row.get("ve_ne_subtotal_sin_descuento") or row.get("total") or (base_amount + global_disc_amt) or base_amount),
+            2,
+        )
+        item["auto_discount_pct"] = auto_disc_pct
+        item["auto_discount_amount"] = auto_disc_amt
+        item["auto_discount_label"] = str(row.get("ve_ne_descuento_auto_etiqueta") or "")
+        item["manual_discount_pct"] = manual_disc_pct
+        item["manual_discount_amount"] = manual_disc_amt
+        item["global_discount_amount"] = global_disc_amt
+        item["subtotal_before_discount"] = subtotal_before
+        item["has_global_discount"] = bool(
+            auto_disc_pct > 0 or manual_disc_pct > 0 or global_disc_amt > 0
+        )
+        item["has_discount"] = bool(row.get("has_discount") or item["has_global_discount"])
         normalized.append(item)
 
     return {

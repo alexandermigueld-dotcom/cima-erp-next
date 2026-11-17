@@ -82,6 +82,22 @@ def get_seller_bootstrap() -> dict:
         sales_channels[0] if sales_channels else "",
     )
 
+    from cima_ve.services.delivery_note_service import (
+        DEFAULT_AUTO_DISCOUNT_TIERS,
+        parse_auto_discount_tiers,
+    )
+
+    auto_discount_enabled = True
+    auto_discount_tiers = [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
+    try:
+        settings = frappe.get_single("Cima VE Settings")
+        if settings.meta.has_field("auto_discount_enabled"):
+            auto_discount_enabled = bool(int(settings.auto_discount_enabled or 0))
+        if settings.meta.has_field("auto_discount_tiers"):
+            auto_discount_tiers = parse_auto_discount_tiers(settings.auto_discount_tiers)
+    except Exception:
+        pass
+
     return {
         "company": default_company,
         "current_user": current_user,
@@ -95,6 +111,8 @@ def get_seller_bootstrap() -> dict:
         "default_sales_person": default_sales_person,
         "sales_channels": sales_channels,
         "default_sales_channel": default_sales_channel,
+        "auto_discount_enabled": auto_discount_enabled,
+        "auto_discount_tiers": auto_discount_tiers,
     }
 
 

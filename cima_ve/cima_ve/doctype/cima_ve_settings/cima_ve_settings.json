@@ -33,7 +33,10 @@
   "notify_order_email",
   "notify_whatsapp_number",
   "whatsapp_webhook_url",
-  "whatsapp_api_token"
+  "whatsapp_api_token",
+  "discounts_section",
+  "auto_discount_enabled",
+  "auto_discount_tiers"
  ],
  "fields": [
   {
@@ -199,6 +202,25 @@
    "fieldname": "whatsapp_api_token",
    "fieldtype": "Password",
    "label": "WhatsApp API Token (Opcional)"
+  },
+  {
+   "fieldname": "discounts_section",
+   "fieldtype": "Section Break",
+   "label": "Descuentos Automáticos (Nota de Entrega)"
+  },
+  {
+   "default": "1",
+   "description": "Aplica automáticamente un porcentaje de descuento según el monto total de la Nota de Entrega.",
+   "fieldname": "auto_discount_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Descuentos Automáticos por Monto"
+  },
+  {
+   "default": "[{\"label\": \"Compra < $100\", \"min_amount\": 0, \"max_amount\": 99.99, \"discount_percentage\": 0}, {\"label\": \"Compra $500 - $1,000\", \"min_amount\": 500, \"max_amount\": 1000, \"discount_percentage\": 4.76}, {\"label\": \"Compra > $1,000\", \"min_amount\": 1000.01, \"max_amount\": null, \"discount_percentage\": 9.09}]",
+   "description": "Lista JSON de reglas de descuento automático (ej. [{\"label\":\"Compra $500 - $1,000\",\"min_amount\":500,\"max_amount\":1000,\"discount_percentage\":4.76}]). Use max_amount: null para sin límite superior.",
+   "fieldname": "auto_discount_tiers",
+   "fieldtype": "Small Text",
+   "label": "Reglas de Descuento Automático (JSON)"
   }
  ],
  "issingle": 1,

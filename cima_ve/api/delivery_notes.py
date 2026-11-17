@@ -4,9 +4,13 @@ import json
 
 from cima_ve.api._compat import whitelist
 from cima_ve.services.delivery_note_service import (
+    DEFAULT_AUTO_DISCOUNT_TIERS,
     append_payment_history,
+    compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_partial_payment_state,
+    is_cash_payment_method,
+    parse_auto_discount_tiers,
     summarize_delivery_notes,
 )
 from cima_ve.services.seller_pos_service import (
@@ -20,6 +24,22 @@ def _get_tax_rates() -> tuple[float, float]:
 
     settings = frappe.get_single("Cima VE Settings")
     return float(settings.iva_rate or 16.0), float(settings.igtf_rate or 3.0)
+
+
+def _get_auto_discount_config() -> tuple[bool, list[dict]]:
+    import frappe
+
+    try:
+        settings = frappe.get_single("Cima VE Settings")
+        enabled = (
+            bool(int(settings.auto_discount_enabled or 0))
+            if settings.meta.has_field("auto_discount_enabled")
+            else True
+        )
+        raw_tiers = settings.auto_discount_tiers if settings.meta.has_field("auto_discount_tiers") else None
+        return enabled, parse_auto_discount_tiers(raw_tiers)
+    except Exception:
+        return True, [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
 
 
 def _resolve_tax_account(company: str, keyword: str = "") -> str:
@@ -55,6 +75,8 @@ def create_quick_delivery_note(
     sales_channel: str = "Detal",
     sales_person: str = "",
     notes: str = "",
+    manual_discount_enabled: int | bool = 0,
+    manual_discount_percentage: float | str = 0.0,
 ) -> dict:
     """Crea y confirma una Nota de Entrega (Delivery Note): descuenta inventario sin cobrar dinero aún."""
     import frappe
@@ -119,6 +141,45 @@ def create_quick_delivery_note(
 
     doc.run_method("calculate_taxes_and_totals")
 
+    subtotal_before_global = round(float(doc.net_total or doc.total or doc.grand_total or 0.0), 2)
+    auto_disc_enabled, auto_disc_tiers = _get_auto_discount_config()
+    manual_disc_flag = (
+        bool(int(manual_discount_enabled))
+        if isinstance(manual_discount_enabled, (int, str)) and str(manual_discount_enabled).strip() != ""
+        else bool(manual_discount_enabled)
+    )
+    try:
+        manual_disc_pct = float(manual_discount_percentage or 0.0)
+    except (TypeError, ValueError):
+        manual_disc_pct = 0.0
+
+    disc_info = compute_delivery_note_discounts(
+        subtotal=subtotal_before_global,
+        auto_discount_enabled=auto_disc_enabled,
+        tiers=auto_disc_tiers,
+        manual_discount_enabled=manual_disc_flag,
+        manual_discount_percentage=manual_disc_pct,
+    )
+
+    if disc_info["total_discount_amount"] > 0:
+        doc.apply_discount_on = "Net Total"
+        doc.discount_amount = disc_info["total_discount_amount"]
+        doc.additional_discount_percentage = disc_info["effective_discount_pct"]
+        doc.run_method("calculate_taxes_and_totals")
+
+    if doc.meta.has_field("ve_ne_subtotal_sin_descuento"):
+        doc.ve_ne_subtotal_sin_descuento = disc_info["subtotal"]
+    if doc.meta.has_field("ve_ne_descuento_auto_pct"):
+        doc.ve_ne_descuento_auto_pct = disc_info["auto_discount_pct"]
+    if doc.meta.has_field("ve_ne_descuento_auto_monto"):
+        doc.ve_ne_descuento_auto_monto = disc_info["auto_discount_amount"]
+    if doc.meta.has_field("ve_ne_descuento_auto_etiqueta"):
+        doc.ve_ne_descuento_auto_etiqueta = disc_info["auto_discount_label"]
+    if doc.meta.has_field("ve_ne_descuento_manual_pct"):
+        doc.ve_ne_descuento_manual_pct = disc_info["manual_discount_pct"]
+    if doc.meta.has_field("ve_ne_descuento_manual_monto"):
+        doc.ve_ne_descuento_manual_monto = disc_info["manual_discount_amount"]
+
     discounted_items: list[dict] = []
     for item_doc in doc.items:
         orig_rate = float(getattr(item_doc, "price_list_rate", 0) or 0)
@@ -143,6 +204,16 @@ def create_quick_delivery_note(
             for d in discounted_items
         )
         doc.remarks = f"{doc.remarks} | Descuento en: {disc_summary}".strip(" |")
+    if disc_info["auto_discount_amount"] > 0:
+        doc.remarks = (
+            f"{doc.remarks} | Descuento automático {disc_info['auto_discount_pct']:.2f}% "
+            f"({disc_info['auto_discount_label']}): -${disc_info['auto_discount_amount']:.2f}"
+        ).strip(" |")
+    if disc_info["manual_discount_amount"] > 0:
+        doc.remarks = (
+            f"{doc.remarks} | Descuento manual {disc_info['manual_discount_pct']:.2f}%: "
+            f"-${disc_info['manual_discount_amount']:.2f}"
+        ).strip(" |")
 
     doc.insert()
     doc.submit()
@@ -155,8 +226,9 @@ def create_quick_delivery_note(
         "currency": doc.currency,
         "net_total": float(doc.net_total or 0),
         "grand_total": float(doc.grand_total or 0),
-        "has_discount": bool(discounted_items),
+        "has_discount": bool(discounted_items or disc_info["has_global_discount"]),
         "discounted_items": discounted_items,
+        "discount_info": disc_info,
         "seller": {
             "user": getattr(doc, "ve_vendedor_usuario", None) or seller_user,
             "fullname": getattr(doc, "ve_vendedor_nombre", None) or seller_name,
@@ -192,6 +264,12 @@ def get_delivery_notes(
     has_monto_pagado = dn_meta.has_field("ve_ne_monto_pagado")
     has_saldo_pendiente = dn_meta.has_field("ve_ne_saldo_pendiente")
     has_historial_pagos = dn_meta.has_field("ve_ne_historial_pagos")
+    has_sub_sin_desc = dn_meta.has_field("ve_ne_subtotal_sin_descuento")
+    has_desc_auto_pct = dn_meta.has_field("ve_ne_descuento_auto_pct")
+    has_desc_auto_monto = dn_meta.has_field("ve_ne_descuento_auto_monto")
+    has_desc_auto_etiq = dn_meta.has_field("ve_ne_descuento_auto_etiqueta")
+    has_desc_manual_pct = dn_meta.has_field("ve_ne_descuento_manual_pct")
+    has_desc_manual_monto = dn_meta.has_field("ve_ne_descuento_manual_monto")
 
     conditions = ["dn.docstatus IN (1, 2)"]
     params: dict = {}
@@ -222,8 +300,11 @@ def get_delivery_notes(
         "dn.customer",
         "dn.customer_name",
         "dn.currency",
+        "dn.total",
         "dn.net_total",
         "dn.grand_total",
+        "dn.discount_amount",
+        "dn.additional_discount_percentage",
         "dn.total_qty",
         "dn.status",
         "COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner) AS seller_user" if has_vendedor_user else "dn.owner AS seller_user",
@@ -240,6 +321,12 @@ def get_delivery_notes(
         "dn.ve_ne_monto_pagado AS ve_ne_monto_pagado" if has_monto_pagado else "0 AS ve_ne_monto_pagado",
         "dn.ve_ne_saldo_pendiente AS ve_ne_saldo_pendiente" if has_saldo_pendiente else "0 AS ve_ne_saldo_pendiente",
         "dn.ve_ne_historial_pagos AS ve_ne_historial_pagos" if has_historial_pagos else "'' AS ve_ne_historial_pagos",
+        "dn.ve_ne_subtotal_sin_descuento AS ve_ne_subtotal_sin_descuento" if has_sub_sin_desc else "0 AS ve_ne_subtotal_sin_descuento",
+        "dn.ve_ne_descuento_auto_pct AS ve_ne_descuento_auto_pct" if has_desc_auto_pct else "0 AS ve_ne_descuento_auto_pct",
+        "dn.ve_ne_descuento_auto_monto AS ve_ne_descuento_auto_monto" if has_desc_auto_monto else "0 AS ve_ne_descuento_auto_monto",
+        "dn.ve_ne_descuento_auto_etiqueta AS ve_ne_descuento_auto_etiqueta" if has_desc_auto_etiq else "'' AS ve_ne_descuento_auto_etiqueta",
+        "dn.ve_ne_descuento_manual_pct AS ve_ne_descuento_manual_pct" if has_desc_manual_pct else "0 AS ve_ne_descuento_manual_pct",
+        "dn.ve_ne_descuento_manual_monto AS ve_ne_descuento_manual_monto" if has_desc_manual_monto else "0 AS ve_ne_descuento_manual_monto",
     ]
 
     rows = frappe.db.sql(
@@ -300,8 +387,8 @@ def get_delivery_notes(
 
     iva_rate, igtf_rate = _get_tax_rates()
     modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
-    payment_options = modes or ["Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia"]
-    for default_m in ["Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
+    payment_options = modes or ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]
+    for default_m in ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
         if default_m not in payment_options:
             payment_options.append(default_m)
 
@@ -368,6 +455,7 @@ def mark_delivery_note_paid(
     apply_igtf: int | bool = 0,
     reference: str = "",
     paid_amount: float | str | None = None,
+    screenshot_url: str = "",
 ) -> dict:
     """Registra un abono o pago total de una Nota de Entrega: crea Sales Invoice (si no existe) y Payment Entry parcial/total."""
     import frappe
@@ -385,6 +473,10 @@ def mark_delivery_note_paid(
     clean_method = (payment_method or "").strip()
     if not clean_method:
         frappe.throw("Selecciona un método de pago.")
+
+    is_cash = is_cash_payment_method(clean_method)
+    clean_reference = "" if is_cash else (reference or "").strip()
+    clean_screenshot = "" if is_cash else (screenshot_url or "").strip()
 
     requested_amount: float | None = None
     if paid_amount not in (None, ""):
@@ -450,7 +542,7 @@ def mark_delivery_note_paid(
                     },
                 )
 
-        si.remarks = f"Liquidación Nota de Entrega {dn.name} | Método: {clean_method}" + (f" | Ref: {reference}" if reference else "")
+        si.remarks = f"Liquidación Nota de Entrega {dn.name} | Método: {clean_method}" + (f" | Ref: {clean_reference}" if clean_reference else "")
         _apply_required_sales_metadata(si, sales_channel=getattr(dn, "canal_venta", "Detal") or "Detal")
         si.flags.ignore_fiscal_stamp = True
         si.insert(ignore_permissions=True)
@@ -480,7 +572,7 @@ def mark_delivery_note_paid(
         pe.received_amount = pay_amt
         if getattr(pe, "references", None):
             pe.references[0].allocated_amount = pay_amt
-        pe.reference_no = (reference or dn.name)[:140]
+        pe.reference_no = (clean_reference or dn.name)[:140]
         pe.reference_date = today()
         pe.remarks = f"Pago Nota de Entrega {dn.name} ({clean_method}) — ${pay_amt:.2f}"
         pe.insert(ignore_permissions=True)
@@ -502,7 +594,8 @@ def mark_delivery_note_paid(
         {
             "amount": pay_amt,
             "method": clean_method,
-            "reference": (reference or "").strip(),
+            "reference": clean_reference,
+            "screenshot_url": clean_screenshot,
             "paid_at": resolved_at,
             "user": resolved_by,
             "payment_entry": payment_entry_name,
@@ -532,6 +625,8 @@ def mark_delivery_note_paid(
         f"Abono ${pay_amt:.2f} ({clean_method}) | "
         f"Acumulado: ${new_paid_total:.2f} / ${total_to_pay:.2f} | "
         f"Saldo pendiente: ${new_remaining:.2f} | Estado: {new_estado} | Factura: {si.name}"
+        + (f" | Ref: {clean_reference}" if clean_reference else "")
+        + (f" | Captura: {clean_screenshot}" if clean_screenshot else "")
         + (f" | Comprobante: {payment_entry_name}" if payment_entry_name else "")
     )
     dn.add_comment("Comment", comment_msg)

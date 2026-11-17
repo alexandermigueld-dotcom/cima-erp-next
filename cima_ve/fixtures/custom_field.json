@@ -350,5 +350,81 @@
   "module": "Cima VE",
   "name": "Delivery Note-ve_ne_historial_pagos",
   "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_subtotal_sin_descuento",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_historial_pagos",
+  "label": "Subtotal Antes de Descuento Global",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_subtotal_sin_descuento",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_descuento_auto_pct",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_subtotal_sin_descuento",
+  "label": "Descuento Automático (%)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_descuento_auto_pct",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_descuento_auto_monto",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_descuento_auto_pct",
+  "label": "Descuento Automático ($)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_descuento_auto_monto",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_descuento_auto_etiqueta",
+  "fieldtype": "Data",
+  "insert_after": "ve_ne_descuento_auto_monto",
+  "label": "Regla Descuento Automático",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_descuento_auto_etiqueta",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_descuento_manual_pct",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_descuento_auto_etiqueta",
+  "label": "Descuento Manual (%)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_descuento_manual_pct",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_descuento_manual_monto",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_descuento_manual_pct",
+  "label": "Descuento Manual ($)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_descuento_manual_monto",
+  "precision": "2",
+  "read_only": 1
  }
 ]

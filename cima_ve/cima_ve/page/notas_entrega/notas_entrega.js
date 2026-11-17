@@ -212,9 +212,24 @@ class CimaNotasEntrega {
 						})
 						.join("<br>");
 					const moreItems = (n.items || []).length > 4 ? `<div class="text-muted small">+${n.items.length - 4} más</div>` : "";
-					const noteDiscountBadge = n.has_discount
-						? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Con descuento (${Number(n.discounted_items_count || 1)})</span></div>`
+					const globalDiscTags = [];
+					if (Number(n.auto_discount_pct || 0) > 0 || Number(n.auto_discount_amount || 0) > 0) {
+						globalDiscTags.push(
+							`Auto -${Number(n.auto_discount_pct || 0).toFixed(2)}% (-$${Number(n.auto_discount_amount || 0).toFixed(2)})`
+						);
+					}
+					if (Number(n.manual_discount_pct || 0) > 0 || Number(n.manual_discount_amount || 0) > 0) {
+						globalDiscTags.push(
+							`Manual -${Number(n.manual_discount_pct || 0).toFixed(2)}% (-$${Number(n.manual_discount_amount || 0).toFixed(2)})`
+						);
+					}
+					const globalDiscBadge = globalDiscTags.length
+						? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;font-size:10px;display:inline-block;white-space:normal;">Descuento: ${frappe.utils.escape_html(globalDiscTags.join(" + "))}</span></div>`
 						: "";
+					const noteDiscountBadge =
+						!globalDiscTags.length && n.has_discount
+							? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Con descuento (${Number(n.discounted_items_count || 1)})</span></div>`
+							: "";
 					const badgeClass =
 						n.ve_ne_estado === "Pagada"
 							? "cima-ne-badge-pagada"
@@ -229,8 +244,12 @@ class CimaNotasEntrega {
 						? `<div class="mt-1 pt-1" style="border-top:1px dashed #cbd5e1;">` +
 						  history
 								.map(
-									(h, idx) =>
-										`<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (${frappe.utils.escape_html(h.reference)})` : ""} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`
+									(h, idx) => {
+										const proofLink = h.screenshot_url
+											? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
+											: "";
+										return `<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (Ref: ${frappe.utils.escape_html(h.reference)})` : ""}${proofLink} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
+									}
 								)
 								.join("") +
 						  `</div>`
@@ -277,10 +296,15 @@ class CimaNotasEntrega {
 						</div>`
 						: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`;
 
+					const origSub = Number(n.subtotal_before_discount || 0);
+					const baseDiscPrefix =
+						n.has_global_discount && origSub > Number(n.amount || 0) + 0.01
+							? `<div class="small text-muted"><del>$${origSub.toFixed(2)}</del></div>`
+							: "";
 					const amountCellHtml =
 						n.ve_ne_estado === "Pago Parcial"
-							? `<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div><div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
-							: `$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}`;
+							? `${baseDiscPrefix}<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div><div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
+							: `${baseDiscPrefix}$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}`;
 
 					return `
 						<tr>
@@ -288,7 +312,7 @@ class CimaNotasEntrega {
 							<td>${frappe.utils.escape_html(n.posting_date || "")}</td>
 							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}</td>
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
-							<td class="small">${itemsText}${moreItems}${noteDiscountBadge}</td>
+							<td class="small">${itemsText}${moreItems}${globalDiscBadge}${noteDiscountBadge}</td>
 							<td class="text-right font-weight-bold">${amountCellHtml}</td>
 							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
 							<td>${resolutionHtml}</td>
@@ -319,8 +343,12 @@ class CimaNotasEntrega {
 				<div><strong>Pagos anteriores:</strong> $${alreadyPaid.toFixed(2)} de $${existingTotal.toFixed(2)} · <strong>Saldo pendiente: $${existingRemaining.toFixed(2)}</strong></div>
 				${history
 					.map(
-						(h, idx) =>
-							`<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`
+						(h, idx) => {
+							const proof = h.screenshot_url
+								? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
+								: "";
+							return `<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}${proof}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
+						}
 					)
 					.join("")}
 			</div>`
@@ -364,9 +392,21 @@ class CimaNotasEntrega {
 					default: hasExistingInvoice ? existingRemaining : Number((baseAmount * (1 + ivaRate / 100)).toFixed(2)),
 				},
 				{
-					label: "Referencia / Comprobante (Opcional)",
+					label: "Número de Referencia",
 					fieldname: "reference",
 					fieldtype: "Data",
+					description: "Número de referencia o confirmación del pago (no aplica para efectivo).",
+				},
+				{
+					fieldtype: "HTML",
+					fieldname: "screenshot_box",
+					options: `
+						<div class="form-group" id="ne-screenshot-group">
+							<label class="control-label small">Captura de Pantalla / Comprobante</label>
+							<input type="file" id="ne-payment-screenshot" class="form-control input-sm" accept="image/*" />
+							<div id="ne-screenshot-preview" class="small text-muted mt-1"></div>
+						</div>
+					`,
 				},
 				{
 					fieldtype: "HTML",
@@ -375,11 +415,40 @@ class CimaNotasEntrega {
 				},
 			],
 			primary_action_label: "Registrar Pago",
-			primary_action: (values) => {
+			primary_action: async (values) => {
 				const payAmt = Number(values.paid_amount);
 				if (isNaN(payAmt) || payAmt <= 0) {
 					frappe.msgprint("Ingresa un monto válido mayor que 0.");
 					return;
+				}
+				const isCash = isCashMethod(values.payment_method);
+				let screenshotUrl = "";
+				if (!isCash) {
+					const fileInput = d.$wrapper.find("#ne-payment-screenshot")[0];
+					const file = fileInput && fileInput.files && fileInput.files[0];
+					if (file) {
+						try {
+							const formData = new FormData();
+							formData.append("file", file, file.name);
+							formData.append("doctype", "Delivery Note");
+							formData.append("docname", note.name);
+							formData.append("is_private", "1");
+							const resp = await fetch("/api/method/upload_file", {
+								method: "POST",
+								headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
+								body: formData,
+							});
+							const json = await resp.json();
+							if (!resp.ok || !json.message || !json.message.file_url) {
+								frappe.msgprint("No se pudo subir la captura de pantalla. Intenta nuevamente.");
+								return;
+							}
+							screenshotUrl = json.message.file_url;
+						} catch (err) {
+							frappe.msgprint("Error al subir la captura de pantalla.");
+							return;
+						}
+					}
 				}
 				frappe.call({
 					method: "cima_ve.api.delivery_notes.mark_delivery_note_paid",
@@ -388,8 +457,9 @@ class CimaNotasEntrega {
 						payment_method: values.payment_method,
 						apply_iva: values.apply_iva ? 1 : 0,
 						apply_igtf: values.apply_igtf ? 1 : 0,
-						reference: values.reference || "",
+						reference: isCash ? "" : values.reference || "",
 						paid_amount: payAmt,
+						screenshot_url: screenshotUrl,
 					},
 					freeze: true,
 					freeze_message: "Registrando pago...",
@@ -409,6 +479,18 @@ class CimaNotasEntrega {
 				});
 			},
 		});
+
+		const isCashMethod = (method) => {
+			const lower = String(method || "").trim().toLowerCase();
+			return lower.includes("efectivo") || /\bcash\b/.test(lower);
+		};
+
+		const toggleProofFields = () => {
+			const method = d.get_value("payment_method");
+			const cash = isCashMethod(method);
+			d.set_df_property("reference", "hidden", cash ? 1 : 0);
+			d.$wrapper.find("#ne-screenshot-group").toggle(!cash);
+		};
 
 		let userEditedAmount = hasExistingInvoice;
 		const computeTargetTotal = () => {
@@ -453,11 +535,17 @@ class CimaNotasEntrega {
 			d.fields_dict.apply_iva.$input.on("change", () => updatePreview(true));
 			d.fields_dict.apply_igtf.$input.on("change", () => updatePreview(true));
 		}
+		d.fields_dict.payment_method.$input.on("change", () => toggleProofFields());
 		d.fields_dict.paid_amount.$input.on("input change", () => {
 			userEditedAmount = true;
 			updatePreview(false);
 		});
+		d.$wrapper.on("change", "#ne-payment-screenshot", (e) => {
+			const file = e.target.files && e.target.files[0];
+			d.$wrapper.find("#ne-screenshot-preview").text(file ? `Archivo seleccionado: ${file.name}` : "");
+		});
 		d.show();
+		toggleProofFields();
 		updatePreview(!hasExistingInvoice);
 		setTimeout(() => d.fields_dict.paid_amount.$input.focus().select(), 80);
 	}
