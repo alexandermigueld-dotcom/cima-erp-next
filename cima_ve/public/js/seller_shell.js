@@ -88,6 +88,14 @@
     $(document).on("page-change", enforceSellerRoute);
   }
 
-  $(document).on("startup", init);
-  if (window.frappe && frappe.boot) init();
+  function boot() {
+    try {
+      if (document.body) init();
+    } catch (e) {
+      console.error("seller_shell", e);
+    }
+    if (!started) setTimeout(boot, 300);
+  }
+
+  boot();
 })();
