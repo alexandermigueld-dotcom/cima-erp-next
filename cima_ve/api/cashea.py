@@ -8,15 +8,18 @@ def _get_cashea_client() -> CasheaClient:
     import frappe
 
     settings = frappe.get_single("Cima VE Settings")
+    simulation = bool(settings.simulation_mode)
+    if settings.cashea_webhook_secret:
+        secret = settings.get_password("cashea_webhook_secret")
+    elif simulation:
+        secret = "sim-cashea-secret"
+    else:
+        secret = ""
     return CasheaClient(
         api_url=settings.cashea_api_url or "",
         api_key=settings.get_password("cashea_api_key") if settings.cashea_api_key else "",
-        webhook_secret=(
-            settings.get_password("cashea_webhook_secret")
-            if settings.cashea_webhook_secret
-            else "sim-cashea-secret"
-        ),
-        simulation_mode=bool(settings.simulation_mode),
+        webhook_secret=secret,
+        simulation_mode=simulation,
     )
 
 
@@ -26,6 +29,7 @@ def create_cashea_checkout(sales_invoice_name: str) -> dict:
     import frappe
 
     doc = frappe.get_doc("Sales Invoice", sales_invoice_name)
+    frappe.has_permission("Sales Invoice", "write", doc=doc, throw=True)
     customer_rif = frappe.db.get_value("Customer", doc.customer, "ve_rif_cedula") or doc.customer
 
     client = _get_cashea_client()
@@ -55,6 +59,8 @@ def webhook() -> dict:
     import frappe
 
     client = _get_cashea_client()
+    if not client.webhook_secret:
+        frappe.throw("Webhook de Cashea no configurado.", frappe.PermissionError)
     raw_body = frappe.request.get_data() or b"{}"
     signature = frappe.get_request_header("X-Cashea-Signature") or ""
     event = client.parse_webhook(raw_body, signature)

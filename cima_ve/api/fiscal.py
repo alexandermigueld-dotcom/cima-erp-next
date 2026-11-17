@@ -29,6 +29,7 @@ def stamp_sales_invoice(sales_invoice_name: str) -> dict:
     import frappe
 
     doc = frappe.get_doc("Sales Invoice", sales_invoice_name)
+    frappe.has_permission("Sales Invoice", "write", doc=doc, throw=True)
     customer_rif = (
         frappe.db.get_value("Customer", doc.customer, "ve_rif_cedula")
         or frappe.db.get_value("Customer", doc.customer, "tax_id")

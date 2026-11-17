@@ -60,7 +60,7 @@ class CasheaClient:
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
-        self.webhook_secret = webhook_secret or "sim-cashea-secret"
+        self.webhook_secret = webhook_secret or ""
         self.simulation_mode = simulation_mode or not (self.api_url and self.api_key)
         self.down_payment_ratio = down_payment_ratio
         self.installments_count = installments_count
@@ -164,7 +164,7 @@ class CasheaClient:
         ).hexdigest()
 
     def verify_webhook_signature(self, payload_bytes: bytes, signature_header: str) -> bool:
-        if not signature_header:
+        if not signature_header or not self.webhook_secret:
             return False
         expected = self.sign_payload(payload_bytes)
         clean_sig = signature_header.replace("sha256=", "").strip()
