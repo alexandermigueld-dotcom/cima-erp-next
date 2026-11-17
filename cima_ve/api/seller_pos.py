@@ -84,17 +84,25 @@ def get_seller_bootstrap() -> dict:
 
     from cima_ve.services.delivery_note_service import (
         DEFAULT_AUTO_DISCOUNT_TIERS,
+        DEFAULT_COMMISSION_RULES,
         parse_auto_discount_tiers,
+        parse_commission_rules,
     )
 
     auto_discount_enabled = True
     auto_discount_tiers = [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
+    commission_enabled = True
+    commission_rules = [dict(r) for r in DEFAULT_COMMISSION_RULES]
     try:
         settings = frappe.get_single("Cima VE Settings")
         if settings.meta.has_field("auto_discount_enabled"):
             auto_discount_enabled = bool(int(settings.auto_discount_enabled or 0))
         if settings.meta.has_field("auto_discount_tiers"):
             auto_discount_tiers = parse_auto_discount_tiers(settings.auto_discount_tiers)
+        if settings.meta.has_field("commission_enabled"):
+            commission_enabled = bool(int(settings.commission_enabled or 0))
+        if settings.meta.has_field("commission_rules"):
+            commission_rules = parse_commission_rules(settings.commission_rules)
     except Exception:
         pass
 
@@ -113,6 +121,8 @@ def get_seller_bootstrap() -> dict:
         "default_sales_channel": default_sales_channel,
         "auto_discount_enabled": auto_discount_enabled,
         "auto_discount_tiers": auto_discount_tiers,
+        "commission_enabled": commission_enabled,
+        "commission_rules": commission_rules,
     }
 
 

@@ -49,7 +49,10 @@
   "fx_adjusted_rate",
   "fx_last_updated",
   "fx_sync_status",
-  "fx_sync_now"
+  "fx_sync_now",
+  "commissions_section",
+  "commission_enabled",
+  "commission_rules"
  ],
  "fields": [
   {
@@ -321,6 +324,25 @@
    "fieldname": "fx_sync_now",
    "fieldtype": "Button",
    "label": "Actualizar Tasas Ahora"
+  },
+  {
+   "fieldname": "commissions_section",
+   "fieldtype": "Section Break",
+   "label": "Comisiones de Vendedores (Nota de Entrega)"
+  },
+  {
+   "default": "1",
+   "description": "Calcula la comisión del vendedor sobre el margen de ganancia (Venta neta - Costo de productos) según la opción seleccionada.",
+   "fieldname": "commission_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Comisiones por Margen de Ganancia"
+  },
+  {
+   "default": "[{\"label\": \"Meta Ads 7%\", \"channel\": \"Meta Ads\", \"percentage\": 7}, {\"label\": \"Detal 8%\", \"channel\": \"Detal\", \"percentage\": 8}, {\"label\": \"Mayor 10%\", \"channel\": \"Mayor\", \"percentage\": 10}]",
+   "description": "Lista JSON de modalidades de comisión (ej. [{\"label\":\"Mayor 10%\",\"channel\":\"Mayor\",\"percentage\":10}]). Puedes editar porcentajes o agregar nuevas opciones.",
+   "fieldname": "commission_rules",
+   "fieldtype": "Small Text",
+   "label": "Opciones de Comisión por Canal (JSON)"
   }
  ],
  "issingle": 1,

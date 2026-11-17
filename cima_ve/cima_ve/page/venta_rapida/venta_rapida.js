@@ -29,6 +29,7 @@ class CimaSellerPortal {
 			priceList: "",
 			warehouse: "",
 			salesChannel: "Detal",
+			commissionOption: "",
 			selectedCustomer: null,
 			manualDiscountEnabled: false,
 			manualDiscountPct: 0,
@@ -134,7 +135,7 @@ class CimaSellerPortal {
 							</div>
 
 							<div class="form-group mt-3">
-								<label class="control-label">Canal de Venta</label>
+								<label class="control-label">Canal de Venta / Comisión</label>
 								<select id="cima-sales-channel" class="form-control"></select>
 							</div>
 
@@ -303,7 +304,11 @@ class CimaSellerPortal {
 		});
 
 		root.on("change", "#cima-sales-channel", (e) => {
-			this.state.salesChannel = $(e.target).val();
+			const selected = $(e.target).val() || "";
+			this.state.commissionOption = selected;
+			const rules = this.state.bootstrap?.commission_rules || [];
+			const matched = rules.find((r) => r.label === selected || r.channel === selected);
+			this.state.salesChannel = matched ? matched.channel : selected;
 		});
 
 		root.on("change", "#cima-enable-discount", (e) => {
@@ -422,16 +427,31 @@ class CimaSellerPortal {
 					(r.message.warehouses || [])
 						.map((w) => `<option value="${frappe.utils.escape_html(w.name)}">${frappe.utils.escape_html(w.warehouse_name || w.name)}</option>`)
 						.join("");
-				const chList = (r.message.sales_channels && r.message.sales_channels.length)
-					? r.message.sales_channels
-					: ["Detal", "Mayor", "Meta Ads"];
-				const chOptions = chList
-					.map((ch) => `<option value="${frappe.utils.escape_html(ch)}">${frappe.utils.escape_html(ch)}</option>`)
-					.join("");
+				const rules = (r.message.commission_rules && r.message.commission_rules.length)
+					? r.message.commission_rules
+					: [];
+				let chOptions = "";
+				if (rules.length) {
+					const defChannel = (r.message.default_sales_channel || "Detal").toLowerCase();
+					const defRule = rules.find((ru) => (ru.channel || "").toLowerCase() === defChannel) || rules[0];
+					this.state.commissionOption = defRule.label;
+					this.state.salesChannel = defRule.channel || defRule.label;
+					chOptions = rules
+						.map((ru) => `<option value="${frappe.utils.escape_html(ru.label)}">${frappe.utils.escape_html(ru.label)}</option>`)
+						.join("");
+				} else {
+					const chList = (r.message.sales_channels && r.message.sales_channels.length)
+						? r.message.sales_channels
+						: ["Detal", "Mayor", "Meta Ads"];
+					this.state.commissionOption = this.state.salesChannel;
+					chOptions = chList
+						.map((ch) => `<option value="${frappe.utils.escape_html(ch)}">${frappe.utils.escape_html(ch)}</option>`)
+						.join("");
+				}
 
 				this.wrapper.find("#cima-price-list, #cima-inv-price-list").html(plOptions).val(this.state.priceList);
 				this.wrapper.find("#cima-warehouse, #cima-inv-warehouse").html(whOptions).val(this.state.warehouse);
-				this.wrapper.find("#cima-sales-channel").html(chOptions).val(this.state.salesChannel);
+				this.wrapper.find("#cima-sales-channel").html(chOptions).val(this.state.commissionOption || this.state.salesChannel);
 
 				const sellerFull = r.message.current_user_fullname || frappe.session.user_fullname || frappe.session.user;
 				this.wrapper.find("#cima-logged-seller-badge").html(
@@ -935,6 +955,7 @@ class CimaSellerPortal {
 				price_list: this.state.priceList,
 				warehouse: this.state.warehouse,
 				sales_channel: this.state.salesChannel,
+				commission_option: this.state.commissionOption || this.state.salesChannel,
 				manual_discount_enabled: this.state.manualDiscountEnabled ? 1 : 0,
 				manual_discount_percentage: this.state.manualDiscountEnabled ? Number(this.state.manualDiscountPct || 0) : 0,
 			},
@@ -989,11 +1010,13 @@ class CimaSellerPortal {
 					.map((d) => `${frappe.utils.escape_html(d.item_name || d.item_code)} ($${Number(d.price_list_rate).toFixed(2)} → $${Number(d.rate).toFixed(2)})`)
 					.join(", ")}</div>`
 			: "";
+		const commInfo = res.commission || {};
+		const commOptText = commInfo.option ? ` · <strong>Modalidad:</strong> ${frappe.utils.escape_html(commInfo.option)}` : "";
 		box.html(`
 			<div class="cima-result-banner">
 				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}</div>
 				<div class="small mt-1">
-					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)} ·
+					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText} ·
 					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${adminLink}
 				</div>
 				${globalDiscLine}

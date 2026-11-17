@@ -34,6 +34,7 @@ class CimaNotasEntrega {
 					</div>
 					<div class="d-flex" style="gap:8px;flex-wrap:wrap;">
 						<button type="button" class="btn btn-sm btn-primary" data-action="go-pos">+ Nueva Nota de Entrega</button>
+						<button type="button" class="btn btn-sm btn-success" data-action="calc-commission" id="ne-btn-calc-commission" style="display:none;">Calcular Comisiones</button>
 						<button type="button" class="btn btn-sm btn-default" data-action="go-clients" id="ne-btn-clients" style="display:none;">Clientes y Consumo</button>
 						<button type="button" class="btn btn-sm btn-default" data-action="refresh">Actualizar</button>
 					</div>
@@ -85,13 +86,14 @@ class CimaNotasEntrega {
 									<th>Vendedor</th>
 									<th>Productos</th>
 									<th class="text-right">Monto Base</th>
+									<th>Comisión Vendedor</th>
 									<th>Estado</th>
 									<th>Registro Pago / Cancelación</th>
 									<th>Acciones</th>
 								</tr>
 							</thead>
 							<tbody id="ne-table-body">
-								<tr><td colspan="9" class="text-center text-muted p-4">Cargando notas de entrega...</td></tr>
+								<tr><td colspan="10" class="text-center text-muted p-4">Cargando notas de entrega...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -105,6 +107,7 @@ class CimaNotasEntrega {
 	bindEvents() {
 		const root = this.wrapper;
 		root.on("click", "[data-action='go-pos']", () => frappe.set_route("venta-rapida"));
+		root.on("click", "[data-action='calc-commission']", () => this.openCommissionCalculator());
 		root.on("click", "[data-action='go-clients']", () => frappe.set_route("clientes-consumo"));
 		root.on("click", "[data-action='refresh']", () => this.loadNotes());
 
@@ -156,6 +159,7 @@ class CimaNotasEntrega {
 	applyRoleUi() {
 		const isAdmin = Boolean(this.data?.config?.is_admin);
 		this.wrapper.find("#ne-btn-clients").toggle(isAdmin);
+		this.wrapper.find("#ne-btn-calc-commission").toggle(isAdmin);
 		this.wrapper.find("#ne-seller-filter-wrap").toggle(isAdmin);
 		if (isAdmin) {
 			this.wrapper.find("#ne-hero-title").text("Control de Notas de Entrega — Cima Electronic");
@@ -208,10 +212,15 @@ class CimaNotasEntrega {
 				<div class="cima-ne-kpi-val" style="color:#b91c1c;">$${Number(s.cancelled_total || 0).toFixed(2)}</div>
 				<div class="cima-ne-kpi-sub">${s.cancelled_count || 0} notas anuladas</div>
 			</div>
+			<div class="cima-ne-kpi" style="border-left:3px solid #7c3aed;">
+				<div class="cima-ne-kpi-label">Comisión Vendedor (Filtro)</div>
+				<div class="cima-ne-kpi-val" style="color:#6d28d9;">$${Number(s.filtered_commission || 0).toFixed(2)}</div>
+				<div class="cima-ne-kpi-sub">Pagadas: $${Number(s.filtered_paid_commission || 0).toFixed(2)} · Pend.: $${Number(s.filtered_pending_commission || 0).toFixed(2)}</div>
+			</div>
 			<div class="cima-ne-kpi">
 				<div class="cima-ne-kpi-label">Total Notas</div>
 				<div class="cima-ne-kpi-val">${s.total_count || 0}</div>
-				<div class="cima-ne-kpi-sub">Historial completo</div>
+				<div class="cima-ne-kpi-sub">Margen filtro: $${Number(s.filtered_margin || 0).toFixed(2)}</div>
 			</div>
 			${fxCard}
 		`);
@@ -222,7 +231,7 @@ class CimaNotasEntrega {
 		const notes = this.data?.notes || [];
 		const tbody = this.wrapper.find("#ne-table-body");
 		if (!notes.length) {
-			tbody.html(`<tr><td colspan="9" class="text-center text-muted p-4">No hay Notas de Entrega para los filtros seleccionados.</td></tr>`);
+			tbody.html(`<tr><td colspan="10" class="text-center text-muted p-4">No hay Notas de Entrega para los filtros seleccionados.</td></tr>`);
 			return;
 		}
 
@@ -360,6 +369,23 @@ class CimaNotasEntrega {
 						? `<div class="small text-muted">Envío: ${frappe.utils.escape_html(n.ve_ne_envio_proveedor)}${Number(n.ve_ne_envio_costo || 0) > 0 ? ` ($${Number(n.ve_ne_envio_costo).toFixed(2)})` : ""}</div>`
 						: "";
 
+					let commissionCellHtml = `<span class="text-muted small">Sin comisión</span>`;
+					if (n.ve_ne_estado === "Cancelada") {
+						commissionCellHtml = `<span class="text-muted small">Anulada ($0.00)</span>`;
+					} else if (n.commission_option || Number(n.commission_pct || 0) > 0) {
+						const optLabel = n.commission_option || `${Number(n.commission_pct || 0).toFixed(0)}%`;
+						const marginLine = isAdmin
+							? `<div class="text-muted" style="font-size:11px;">Margen: $${Number(n.margin_amount || 0).toFixed(2)} (Costo: $${Number(n.cost_total || 0).toFixed(2)})</div>`
+							: "";
+						commissionCellHtml = `
+							<div class="small">
+								<span class="label" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:10px;">${frappe.utils.escape_html(optLabel)}</span>
+								<div style="color:#5b21b6;font-weight:700;margin-top:2px;">$${Number(n.commission_amount || 0).toFixed(2)}</div>
+								${marginLine}
+							</div>
+						`;
+					}
+
 					return `
 						<tr>
 							<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a>${originBadge}</td>
@@ -368,6 +394,7 @@ class CimaNotasEntrega {
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
 							<td class="small">${itemsText}${moreItems}${shipInfo}${globalDiscBadge}${noteDiscountBadge}</td>
 							<td class="text-right font-weight-bold">${amountCellHtml}</td>
+							<td>${commissionCellHtml}</td>
 							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
 							<td>${resolutionHtml}</td>
 							<td>${actionsHtml}</td>
@@ -644,5 +671,108 @@ class CimaNotasEntrega {
 			},
 		});
 		d.show();
+	}
+
+	openCommissionCalculator() {
+		frappe.call({
+			method: "cima_ve.api.delivery_notes.calculate_seller_commissions",
+			args: {
+				...this.filters,
+				persist_missing: 1,
+			},
+			freeze: true,
+			freeze_message: "Calculando comisiones de vendedores...",
+			callback: (r) => {
+				if (!r.message) return;
+				const res = r.message;
+				const bySeller = res.by_seller || [];
+				if (res.persisted_count > 0) {
+					this.loadNotes();
+				}
+
+				const sellerFilterLabel = this.filters.seller
+					? frappe.utils.escape_html(this.wrapper.find("#ne-filter-seller option:selected").text() || this.filters.seller)
+					: "Todos los vendedores";
+				const dateRangeLabel =
+					this.filters.from_date || this.filters.to_date
+						? `${this.filters.from_date || "..."} → ${this.filters.to_date || "..."}`
+						: "Todas las fechas";
+				const statusLabel = this.filters.status || "Todos los estados";
+
+				const rowsHtml = bySeller.length
+					? bySeller
+							.map(
+								(b) => `
+						<tr>
+							<td><strong>${frappe.utils.escape_html(b.seller_name || b.seller_user)}</strong><div class="text-muted small">${frappe.utils.escape_html(b.seller_user)}</div></td>
+							<td class="text-center">${b.notes_count} <div class="text-muted small">(${b.paid_notes_count} pag. / ${b.pending_notes_count} pend.)</div></td>
+							<td class="text-right">$${Number(b.sales_total || 0).toFixed(2)}</td>
+							<td class="text-right">$${Number(b.cost_total || 0).toFixed(2)}</td>
+							<td class="text-right">$${Number(b.margin_total || 0).toFixed(2)}</td>
+							<td class="text-right text-success">$${Number(b.paid_commission || 0).toFixed(2)}</td>
+							<td class="text-right text-warning">$${Number(b.pending_commission || 0).toFixed(2)}</td>
+							<td class="text-right" style="font-weight:700;color:#5b21b6;">$${Number(b.commission_total || 0).toFixed(2)}</td>
+						</tr>`
+							)
+							.join("")
+					: `<tr><td colspan="8" class="text-center text-muted p-3">No hay notas activas con comisión para los filtros seleccionados.</td></tr>`;
+
+				const d = new frappe.ui.Dialog({
+					title: "Cálculo de Comisiones por Vendedor",
+					size: "large",
+					fields: [
+						{
+							fieldtype: "HTML",
+							fieldname: "commission_report",
+							options: `
+								<div class="mb-3 p-2 small" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">
+									<strong>Filtros aplicados:</strong> ${sellerFilterLabel} · ${frappe.utils.escape_html(statusLabel)} · ${frappe.utils.escape_html(dateRangeLabel)}
+									${res.persisted_count > 0 ? `<span class="label label-info ml-2">${res.persisted_count} notas históricas actualizadas</span>` : ""}
+								</div>
+								<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;">
+									<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;">
+										<div class="small text-muted">Ventas Netas</div>
+										<div style="font-size:16px;font-weight:700;">$${Number(res.total_sales || 0).toFixed(2)}</div>
+									</div>
+									<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;">
+										<div class="small text-muted">Costo Productos</div>
+										<div style="font-size:16px;font-weight:700;">$${Number(res.total_cost || 0).toFixed(2)}</div>
+									</div>
+									<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;">
+										<div class="small text-muted">Margen de Ganancia</div>
+										<div style="font-size:16px;font-weight:700;color:#0f766e;">$${Number(res.total_margin || 0).toFixed(2)}</div>
+									</div>
+									<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:10px;">
+										<div class="small" style="color:#5b21b6;">Total Comisión a Pagar</div>
+										<div style="font-size:18px;font-weight:800;color:#5b21b6;">$${Number(res.total_commission || 0).toFixed(2)}</div>
+										<div class="small text-muted">Pagadas: $${Number(res.paid_commission || 0).toFixed(2)} · Pend: $${Number(res.pending_commission || 0).toFixed(2)}</div>
+									</div>
+								</div>
+								<div class="table-responsive">
+									<table class="table table-bordered table-sm">
+										<thead>
+											<tr>
+												<th>Vendedor</th>
+												<th class="text-center">Notas</th>
+												<th class="text-right">Ventas Netas</th>
+												<th class="text-right">Costo</th>
+												<th class="text-right">Margen</th>
+												<th class="text-right">Com. Pagadas</th>
+												<th class="text-right">Com. Pendientes</th>
+												<th class="text-right">Total Comisión</th>
+											</tr>
+										</thead>
+										<tbody>${rowsHtml}</tbody>
+									</table>
+								</div>
+							`,
+						},
+					],
+					primary_action_label: "Cerrar",
+					primary_action: () => d.hide(),
+				});
+				d.show();
+			},
+		});
 	}
 }

@@ -5,16 +5,21 @@ import json
 from cima_ve.api._compat import whitelist
 from cima_ve.services.delivery_note_service import (
     DEFAULT_AUTO_DISCOUNT_TIERS,
+    DEFAULT_COMMISSION_RULES,
     DEFAULT_NOTIFICATION_EMAILS,
     DEFAULT_NOTIFICATION_WHATSAPP,
     append_payment_history,
     build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
+    compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
     parse_auto_discount_tiers,
+    parse_commission_rules,
+    resolve_commission_rule,
     summarize_delivery_notes,
+    summarize_seller_commissions,
 )
 from cima_ve.services.seller_pos_service import (
     compute_custom_price_breakdown,
@@ -43,6 +48,80 @@ def _get_auto_discount_config() -> tuple[bool, list[dict]]:
         return enabled, parse_auto_discount_tiers(raw_tiers)
     except Exception:
         return True, [dict(t) for t in DEFAULT_AUTO_DISCOUNT_TIERS]
+
+
+def _get_commission_config() -> tuple[bool, list[dict]]:
+    import frappe
+
+    try:
+        settings = frappe.get_single("Cima VE Settings")
+        enabled = (
+            bool(int(settings.commission_enabled or 0))
+            if settings.meta.has_field("commission_enabled")
+            else True
+        )
+        raw_rules = settings.commission_rules if settings.meta.has_field("commission_rules") else None
+        return enabled, parse_commission_rules(raw_rules)
+    except Exception:
+        return True, [dict(r) for r in DEFAULT_COMMISSION_RULES]
+
+
+def _resolve_items_unit_costs(item_codes: list[str], warehouses: list[str] | None = None) -> tuple[dict[tuple[str, str], float], dict[str, float]]:
+    """Devuelve mapas de costo unitario desde Bin.valuation_rate e Item.valuation_rate / last_purchase_rate."""
+    import frappe
+
+    bin_costs: dict[tuple[str, str], float] = {}
+    item_costs: dict[str, float] = {}
+    clean_codes = sorted({c for c in item_codes if c})
+    if not clean_codes:
+        return bin_costs, item_costs
+
+    clean_wh = sorted({w for w in (warehouses or []) if w})
+    if clean_wh:
+        for b in frappe.get_all(
+            "Bin",
+            filters={"item_code": ["in", clean_codes], "warehouse": ["in", clean_wh]},
+            fields=["item_code", "warehouse", "valuation_rate"],
+            limit_page_length=2000,
+        ):
+            vr = float(b.get("valuation_rate") or 0.0)
+            if vr > 0:
+                bin_costs[(b["item_code"], b["warehouse"])] = vr
+
+    for it in frappe.get_all(
+        "Item",
+        filters={"name": ["in", clean_codes]},
+        fields=["name", "valuation_rate", "last_purchase_rate"],
+        limit_page_length=2000,
+    ):
+        vr = float(it.get("valuation_rate") or 0.0) or float(it.get("last_purchase_rate") or 0.0)
+        if vr > 0:
+            item_costs[it["name"]] = vr
+
+    return bin_costs, item_costs
+
+
+def _compute_dn_items_total_cost(
+    dn_items: list,
+    default_warehouse: str = "",
+    bin_costs: dict[tuple[str, str], float] | None = None,
+    item_costs: dict[str, float] | None = None,
+) -> float:
+    """Calcula el costo total de los productos de una Nota de Entrega."""
+    if bin_costs is None or item_costs is None:
+        codes = [getattr(r, "item_code", None) or r.get("item_code") for r in dn_items]
+        whs = [getattr(r, "warehouse", None) or r.get("warehouse") or default_warehouse for r in dn_items]
+        bin_costs, item_costs = _resolve_items_unit_costs(codes, whs)
+
+    total_cost = 0.0
+    for row in dn_items:
+        code = getattr(row, "item_code", None) if not isinstance(row, dict) else row.get("item_code")
+        qty = float((getattr(row, "qty", None) if not isinstance(row, dict) else row.get("qty")) or 0.0)
+        wh = (getattr(row, "warehouse", None) if not isinstance(row, dict) else row.get("warehouse")) or default_warehouse
+        inc = float((getattr(row, "incoming_rate", None) if not isinstance(row, dict) else row.get("incoming_rate")) or 0.0)
+        unit_cost = inc if inc > 0 else (bin_costs.get((code, wh), 0.0) or item_costs.get(code, 0.0))
+        total_cost += qty * max(unit_cost, 0.0)
+    return round(total_cost, 2)
 
 
 def _get_exchange_rate_snapshot() -> dict:
@@ -183,6 +262,7 @@ def create_quick_delivery_note(
     notes: str = "",
     manual_discount_enabled: int | bool = 0,
     manual_discount_percentage: float | str = 0.0,
+    commission_option: str = "",
 ) -> dict:
     """Crea y confirma una Nota de Entrega (Delivery Note): descuenta inventario sin cobrar dinero aún."""
     import frappe
@@ -232,7 +312,14 @@ def create_quick_delivery_note(
             "items": dn_items,
         }
     )
-    _apply_required_sales_metadata(doc, sales_channel=sales_channel, sales_person=sales_person)
+    comm_enabled, comm_rules = _get_commission_config()
+    selected_comm_input = (commission_option or sales_channel or "").strip()
+    matched_rule = resolve_commission_rule(selected_comm_input, comm_rules)
+    effective_channel = (matched_rule.get("channel") if matched_rule else sales_channel) or "Detal"
+    comm_label = (matched_rule.get("label") if matched_rule else selected_comm_input) or effective_channel
+    comm_pct = float(matched_rule.get("percentage") or 0.0) if (comm_enabled and matched_rule) else 0.0
+
+    _apply_required_sales_metadata(doc, sales_channel=effective_channel, sales_person=sales_person)
     doc.run_method("set_missing_values")
 
     if custom_price_map:
@@ -328,6 +415,20 @@ def create_quick_delivery_note(
     doc.submit()
     doc.reload()
 
+    total_cost = _compute_dn_items_total_cost(doc.items, default_warehouse=doc.set_warehouse or warehouse)
+    net_sale = float(doc.net_total or doc.grand_total or 0.0)
+    comm_calc = compute_margin_commission(net_sale, total_cost, comm_pct)
+    if doc.meta.has_field("ve_ne_comision_opcion"):
+        doc.db_set("ve_ne_comision_opcion", comm_label, update_modified=False)
+    if doc.meta.has_field("ve_ne_comision_pct"):
+        doc.db_set("ve_ne_comision_pct", comm_calc["commission_pct"], update_modified=False)
+    if doc.meta.has_field("ve_ne_costo_total"):
+        doc.db_set("ve_ne_costo_total", comm_calc["total_cost"], update_modified=False)
+    if doc.meta.has_field("ve_ne_margen_ganancia"):
+        doc.db_set("ve_ne_margen_ganancia", comm_calc["margin_amount"], update_modified=False)
+    if doc.meta.has_field("ve_ne_comision_monto"):
+        doc.db_set("ve_ne_comision_monto", comm_calc["commission_amount"], update_modified=False)
+
     notif_result = send_delivery_note_created_notifications(doc)
 
     return {
@@ -340,6 +441,10 @@ def create_quick_delivery_note(
         "has_discount": bool(discounted_items or disc_info["has_global_discount"]),
         "discounted_items": discounted_items,
         "discount_info": disc_info,
+        "commission": {
+            "option": comm_label,
+            **comm_calc,
+        },
         "notifications": notif_result,
         "seller": {
             "user": getattr(doc, "ve_vendedor_usuario", None) or seller_user,
@@ -395,6 +500,12 @@ def get_delivery_notes(
     has_envio_dir = dn_meta.has_field("ve_ne_envio_direccion")
     has_cli_email = dn_meta.has_field("ve_ne_cliente_email")
     has_cli_tel = dn_meta.has_field("ve_ne_cliente_telefono")
+    has_canal_venta = dn_meta.has_field("canal_venta")
+    has_com_opcion = dn_meta.has_field("ve_ne_comision_opcion")
+    has_com_pct = dn_meta.has_field("ve_ne_comision_pct")
+    has_costo_total = dn_meta.has_field("ve_ne_costo_total")
+    has_margen = dn_meta.has_field("ve_ne_margen_ganancia")
+    has_com_monto = dn_meta.has_field("ve_ne_comision_monto")
 
     conditions = ["dn.docstatus IN (1, 2)"]
     params: dict = {}
@@ -467,6 +578,12 @@ def get_delivery_notes(
         "dn.ve_ne_envio_direccion AS ve_ne_envio_direccion" if has_envio_dir else "'' AS ve_ne_envio_direccion",
         "dn.ve_ne_cliente_email AS ve_ne_cliente_email" if has_cli_email else "'' AS ve_ne_cliente_email",
         "dn.ve_ne_cliente_telefono AS ve_ne_cliente_telefono" if has_cli_tel else "'' AS ve_ne_cliente_telefono",
+        "dn.canal_venta AS canal_venta" if has_canal_venta else "'' AS canal_venta",
+        "dn.ve_ne_comision_opcion AS ve_ne_comision_opcion" if has_com_opcion else "'' AS ve_ne_comision_opcion",
+        "dn.ve_ne_comision_pct AS ve_ne_comision_pct" if has_com_pct else "0 AS ve_ne_comision_pct",
+        "dn.ve_ne_costo_total AS ve_ne_costo_total" if has_costo_total else "0 AS ve_ne_costo_total",
+        "dn.ve_ne_margen_ganancia AS ve_ne_margen_ganancia" if has_margen else "0 AS ve_ne_margen_ganancia",
+        "dn.ve_ne_comision_monto AS ve_ne_comision_monto" if has_com_monto else "0 AS ve_ne_comision_monto",
     ]
 
     rows = frappe.db.sql(
@@ -483,6 +600,8 @@ def get_delivery_notes(
 
     dn_names = [r["name"] for r in rows]
     items_by_dn: dict[str, list[dict]] = {}
+    all_item_codes: list[str] = []
+    all_warehouses: list[str] = []
     if dn_names:
         dn_items = frappe.get_all(
             "Delivery Note Item",
@@ -492,6 +611,8 @@ def get_delivery_notes(
                 "item_code",
                 "item_name",
                 "qty",
+                "warehouse",
+                "incoming_rate",
                 "price_list_rate",
                 "rate",
                 "discount_percentage",
@@ -509,6 +630,13 @@ def get_delivery_notes(
                 disc_pct > 0 or disc_amt > 0 or (orig_rate > 0 and final_rate < orig_rate - 0.0001)
             )
             items_by_dn.setdefault(it["parent"], []).append(it)
+            if it.get("item_code"):
+                all_item_codes.append(it["item_code"])
+            if it.get("warehouse"):
+                all_warehouses.append(it["warehouse"])
+
+    comm_enabled, comm_rules = _get_commission_config()
+    bin_costs, item_costs = _resolve_items_unit_costs(all_item_codes, all_warehouses)
 
     for r in rows:
         r["items"] = items_by_dn.get(r["name"], [])
@@ -517,6 +645,33 @@ def get_delivery_notes(
         if not r.get("seller_name") and r.get("seller_user"):
             r["seller_name"] = frappe.utils.get_fullname(r["seller_user"]) or r["seller_user"]
 
+        is_cancelled = int(r.get("docstatus") or 0) == 2 or (r.get("ve_ne_estado") or "") == "Cancelada"
+        is_web_order = (r.get("ve_ne_origen") or "") == "Tienda Web"
+        if (
+            comm_enabled
+            and not is_cancelled
+            and not is_web_order
+            and float(r.get("ve_ne_comision_pct") or 0.0) <= 0.0
+        ):
+            rule = resolve_commission_rule(
+                r.get("ve_ne_comision_opcion") or r.get("canal_venta") or "",
+                comm_rules,
+            )
+            if rule:
+                calc_cost = _compute_dn_items_total_cost(
+                    r["items"],
+                    bin_costs=bin_costs,
+                    item_costs=item_costs,
+                )
+                net_sale = float(r.get("net_total") or r.get("grand_total") or 0.0)
+                calc = compute_margin_commission(net_sale, calc_cost, float(rule.get("percentage") or 0.0))
+                r["ve_ne_comision_opcion"] = rule.get("label") or ""
+                r["ve_ne_comision_pct"] = calc["commission_pct"]
+                r["ve_ne_costo_total"] = calc["total_cost"]
+                r["ve_ne_margen_ganancia"] = calc["margin_amount"]
+                r["ve_ne_comision_monto"] = calc["commission_amount"]
+                r["_commission_computed_fallback"] = True
+
     summarized = summarize_delivery_notes(rows)
     if status == "Pendiente":
         summarized["notes"] = [
@@ -524,6 +679,26 @@ def get_delivery_notes(
         ]
     elif status:
         summarized["notes"] = [n for n in summarized["notes"] if n["ve_ne_estado"] == status]
+
+    filtered_active = [n for n in summarized["notes"] if n.get("ve_ne_estado") != "Cancelada"]
+    summarized["summary"]["filtered_commission"] = round(
+        sum(float(n.get("commission_amount") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_margin"] = round(
+        sum(float(n.get("margin_amount") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_cost"] = round(
+        sum(float(n.get("cost_total") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_paid_commission"] = round(
+        sum(float(n.get("commission_amount") or 0.0) for n in filtered_active if n.get("ve_ne_estado") == "Pagada"),
+        2,
+    )
+    summarized["summary"]["filtered_pending_commission"] = round(
+        sum(float(n.get("commission_amount") or 0.0) for n in filtered_active if n.get("ve_ne_estado") != "Pagada"),
+        2,
+    )
+    summarized["commission_by_seller"] = summarize_seller_commissions(summarized["notes"])
 
     if is_admin:
         iva_rate, igtf_rate = _get_tax_rates()
@@ -553,8 +728,83 @@ def get_delivery_notes(
         "payment_methods": payment_options,
         "sellers": seller_options,
         "exchange_rate": _get_exchange_rate_snapshot(),
+        "commission_enabled": comm_enabled,
+        "commission_rules": comm_rules,
     }
     return summarized
+
+
+@whitelist()
+def calculate_seller_commissions(
+    status: str = "",
+    from_date: str = "",
+    to_date: str = "",
+    seller: str = "",
+    search: str = "",
+    persist_missing: int | bool = 1,
+) -> dict:
+    """Calcula (y opcionalmente guarda en Notas de Entrega históricas) el resumen de comisiones por vendedor."""
+    import frappe
+
+    frappe.only_for("System Manager")
+
+    data = get_delivery_notes(
+        status=status,
+        from_date=from_date,
+        to_date=to_date,
+        seller=seller,
+        search=search,
+    )
+    notes = data.get("notes") or []
+    should_persist = bool(int(persist_missing)) if isinstance(persist_missing, (int, str)) else bool(persist_missing)
+    persisted_count = 0
+
+    if should_persist:
+        dn_meta = frappe.get_meta("Delivery Note")
+        can_write = all(
+            dn_meta.has_field(f)
+            for f in (
+                "ve_ne_comision_opcion",
+                "ve_ne_comision_pct",
+                "ve_ne_costo_total",
+                "ve_ne_margen_ganancia",
+                "ve_ne_comision_monto",
+            )
+        )
+        if can_write:
+            for n in notes:
+                if n.get("_commission_computed_fallback") and n.get("ve_ne_estado") != "Cancelada":
+                    frappe.db.set_value(
+                        "Delivery Note",
+                        n["name"],
+                        {
+                            "ve_ne_comision_opcion": n.get("commission_option") or "",
+                            "ve_ne_comision_pct": float(n.get("commission_pct") or 0.0),
+                            "ve_ne_costo_total": float(n.get("cost_total") or 0.0),
+                            "ve_ne_margen_ganancia": float(n.get("margin_amount") or 0.0),
+                            "ve_ne_comision_monto": float(n.get("commission_amount") or 0.0),
+                        },
+                        update_modified=False,
+                    )
+                    persisted_count += 1
+            if persisted_count:
+                frappe.db.commit()
+
+    by_seller = data.get("commission_by_seller") or []
+    summary = data.get("summary") or {}
+    return {
+        "ok": True,
+        "persisted_count": persisted_count,
+        "notes_count": len([n for n in notes if n.get("ve_ne_estado") != "Cancelada"]),
+        "total_sales": round(sum(b["sales_total"] for b in by_seller), 2),
+        "total_cost": round(sum(b["cost_total"] for b in by_seller), 2),
+        "total_margin": round(sum(b["margin_total"] for b in by_seller), 2),
+        "total_commission": round(sum(b["commission_total"] for b in by_seller), 2),
+        "paid_commission": round(sum(b["paid_commission"] for b in by_seller), 2),
+        "pending_commission": round(sum(b["pending_commission"] for b in by_seller), 2),
+        "by_seller": by_seller,
+        "summary": summary,
+    }
 
 
 @whitelist()

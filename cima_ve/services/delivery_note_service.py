@@ -241,6 +241,136 @@ def append_payment_history(raw_history: str | list | None, entry: dict) -> tuple
     return history, json.dumps(history, ensure_ascii=False)
 
 
+DEFAULT_COMMISSION_RULES: list[dict] = [
+    {"label": "Meta Ads 7%", "channel": "Meta Ads", "percentage": 7.0},
+    {"label": "Detal 8%", "channel": "Detal", "percentage": 8.0},
+    {"label": "Mayor 10%", "channel": "Mayor", "percentage": 10.0},
+]
+
+
+def parse_commission_rules(raw_rules: str | list | None) -> list[dict]:
+    """Parsea las reglas configurables de comisión por canal/modalidad desde Cima VE Settings."""
+    parsed = None
+    if isinstance(raw_rules, list):
+        parsed = raw_rules
+    elif isinstance(raw_rules, str) and raw_rules.strip():
+        try:
+            candidate = json.loads(raw_rules)
+            if isinstance(candidate, list):
+                parsed = candidate
+        except Exception:
+            parsed = None
+
+    if parsed is None:
+        return [dict(r) for r in DEFAULT_COMMISSION_RULES]
+
+    rules: list[dict] = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        if row.get("enabled") is False:
+            continue
+        label = str(row.get("label") or row.get("name") or "").strip()
+        channel = str(row.get("channel") or label).strip()
+        if not label and not channel:
+            continue
+        if not label:
+            label = channel
+        try:
+            pct = float(row.get("percentage") if row.get("percentage") is not None else 0.0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        pct = round(min(max(pct, 0.0), 100.0), 2)
+        rules.append({"label": label, "channel": channel or label, "percentage": pct})
+    return rules or [dict(r) for r in DEFAULT_COMMISSION_RULES]
+
+
+def resolve_commission_rule(selected_option: str | None, rules: list[dict] | None = None) -> dict | None:
+    """Busca la regla de comisión por etiqueta exacta o por canal de venta."""
+    key = str(selected_option or "").strip().lower()
+    if not key:
+        return None
+    active_rules = rules if rules is not None else DEFAULT_COMMISSION_RULES
+    for r in active_rules:
+        if str(r.get("label") or "").strip().lower() == key:
+            return dict(r)
+    for r in active_rules:
+        if str(r.get("channel") or "").strip().lower() == key:
+            return dict(r)
+    return None
+
+
+def compute_margin_commission(
+    net_sale_amount: float,
+    total_cost: float,
+    commission_pct: float,
+) -> dict:
+    """Calcula el margen de ganancia (venta neta - costo) y la comisión del vendedor sobre ese margen."""
+    net_sale = round(max(float(net_sale_amount or 0.0), 0.0), 2)
+    cost = round(max(float(total_cost or 0.0), 0.0), 2)
+    margin = round(net_sale - cost, 2)
+    positive_margin = max(margin, 0.0)
+    pct = round(min(max(float(commission_pct or 0.0), 0.0), 100.0), 2)
+    commission = round(positive_margin * (pct / 100.0), 2)
+    return {
+        "net_sale_amount": net_sale,
+        "total_cost": cost,
+        "margin_amount": margin,
+        "commission_pct": pct,
+        "commission_amount": commission,
+    }
+
+
+def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
+    """Agrupa las notas activas (no canceladas) por vendedor para calcular el pago de comisiones."""
+    buckets: dict[str, dict] = {}
+    for n in notes or []:
+        if (n.get("ve_ne_estado") or "") == "Cancelada" or int(n.get("docstatus") or 0) == 2:
+            continue
+        seller_user = str(n.get("seller_user") or n.get("ve_vendedor_usuario") or n.get("owner") or "Sin vendedor").strip()
+        seller_name = str(n.get("seller_name") or n.get("ve_vendedor_nombre") or seller_user).strip()
+        b = buckets.setdefault(
+            seller_user,
+            {
+                "seller_user": seller_user,
+                "seller_name": seller_name,
+                "notes_count": 0,
+                "paid_notes_count": 0,
+                "pending_notes_count": 0,
+                "sales_total": 0.0,
+                "cost_total": 0.0,
+                "margin_total": 0.0,
+                "commission_total": 0.0,
+                "paid_commission": 0.0,
+                "pending_commission": 0.0,
+            },
+        )
+        comm = round(float(n.get("commission_amount") or 0.0), 2)
+        b["notes_count"] += 1
+        b["sales_total"] += float(n.get("net_total") or n.get("amount") or 0.0)
+        b["cost_total"] += float(n.get("cost_total") or 0.0)
+        b["margin_total"] += float(n.get("margin_amount") or 0.0)
+        b["commission_total"] += comm
+        if n.get("ve_ne_estado") == "Pagada":
+            b["paid_notes_count"] += 1
+            b["paid_commission"] += comm
+        else:
+            b["pending_notes_count"] += 1
+            b["pending_commission"] += comm
+
+    result: list[dict] = []
+    for b in buckets.values():
+        b["sales_total"] = round(b["sales_total"], 2)
+        b["cost_total"] = round(b["cost_total"], 2)
+        b["margin_total"] = round(b["margin_total"], 2)
+        b["commission_total"] = round(b["commission_total"], 2)
+        b["paid_commission"] = round(b["paid_commission"], 2)
+        b["pending_commission"] = round(b["pending_commission"], 2)
+        result.append(b)
+    result.sort(key=lambda r: (r["commission_total"], r["sales_total"]), reverse=True)
+    return result
+
+
 def summarize_delivery_notes(notes: list[dict]) -> dict:
     """Genera KPIs y normaliza el listado de Notas de Entrega."""
     total_count = 0
@@ -251,6 +381,11 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
     paid_total = 0.0
     cancelled_count = 0
     cancelled_total = 0.0
+    total_cost = 0.0
+    total_margin = 0.0
+    total_commission = 0.0
+    paid_commission = 0.0
+    pending_commission = 0.0
 
     normalized: list[dict] = []
     for row in notes or []:
@@ -328,6 +463,28 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             auto_disc_pct > 0 or manual_disc_pct > 0 or global_disc_amt > 0
         )
         item["has_discount"] = bool(row.get("has_discount") or item["has_global_discount"])
+
+        comm_option = str(row.get("ve_ne_comision_opcion") or row.get("canal_venta") or "").strip()
+        comm_pct = round(float(row.get("ve_ne_comision_pct") or 0.0), 2)
+        cost_total = round(float(row.get("ve_ne_costo_total") or 0.0), 2)
+        margin_amount = round(float(row.get("ve_ne_margen_ganancia") or 0.0), 2)
+        comm_amount = round(float(row.get("ve_ne_comision_monto") or 0.0), 2)
+        if estado == "Cancelada":
+            comm_amount = 0.0
+        else:
+            total_cost += cost_total
+            total_margin += margin_amount
+            total_commission += comm_amount
+            if estado == "Pagada":
+                paid_commission += comm_amount
+            else:
+                pending_commission += comm_amount
+
+        item["commission_option"] = comm_option
+        item["commission_pct"] = comm_pct
+        item["cost_total"] = cost_total
+        item["margin_amount"] = margin_amount
+        item["commission_amount"] = comm_amount
         normalized.append(item)
 
     return {
@@ -340,6 +497,11 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             "paid_total": round(paid_total, 2),
             "cancelled_count": cancelled_count,
             "cancelled_total": round(cancelled_total, 2),
+            "total_cost": round(total_cost, 2),
+            "total_margin": round(total_margin, 2),
+            "total_commission": round(total_commission, 2),
+            "paid_commission": round(paid_commission, 2),
+            "pending_commission": round(pending_commission, 2),
         },
         "notes": normalized,
     }

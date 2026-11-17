@@ -4,17 +4,22 @@ import unittest
 
 from cima_ve.services.client_consumption_service import compute_client_consumption
 from cima_ve.services.delivery_note_service import (
+    DEFAULT_COMMISSION_RULES,
     DEFAULT_NOTIFICATION_EMAILS,
     DEFAULT_NOTIFICATION_WHATSAPP,
     append_payment_history,
     build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
+    compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
     parse_auto_discount_tiers,
+    parse_commission_rules,
     parse_notification_emails,
+    resolve_commission_rule,
     summarize_delivery_notes,
+    summarize_seller_commissions,
 )
 
 
@@ -296,6 +301,102 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("upload_storefront_payment_proof", tienda_js)
         self.assertIn("ve_ne_comprobante_url", ne_js)
         self.assertIn("Tienda Web", ne_js)
+
+    def test_margin_commissions_and_seller_summary(self) -> None:
+        # Default configurable rules: Meta Ads 7%, Detal 8%, Mayor 10%
+        rules = parse_commission_rules(None)
+        self.assertEqual(len(rules), 3)
+        self.assertEqual(resolve_commission_rule("Meta Ads", rules)["percentage"], 7.0)
+        self.assertEqual(resolve_commission_rule("Detal 8%", rules)["percentage"], 8.0)
+        mayor = resolve_commission_rule("Mayor", rules)
+        self.assertEqual(mayor["percentage"], 10.0)
+
+        # Custom configurable rule added in settings
+        custom = parse_commission_rules(
+            json.dumps([
+                {"label": "Mayor 10%", "channel": "Mayor", "percentage": 10},
+                {"label": "VIP 12%", "channel": "Detal", "percentage": 12},
+            ])
+        )
+        self.assertEqual(resolve_commission_rule("VIP 12%", custom)["percentage"], 12.0)
+
+        # Prompt example: cost $50, winning margin $10 (sale $60), Mayor 10% -> seller wins $1
+        calc = compute_margin_commission(net_sale_amount=60.0, total_cost=50.0, commission_pct=10.0)
+        self.assertEqual(calc["margin_amount"], 10.0)
+        self.assertEqual(calc["commission_amount"], 1.0)
+
+        # Loss / negative margin yields 0 commission
+        loss_calc = compute_margin_commission(net_sale_amount=45.0, total_cost=50.0, commission_pct=10.0)
+        self.assertEqual(loss_calc["margin_amount"], -5.0)
+        self.assertEqual(loss_calc["commission_amount"], 0.0)
+
+        notes = [
+            {
+                "name": "DN-1",
+                "docstatus": 1,
+                "ve_ne_estado": "Pagada",
+                "grand_total": 60.0,
+                "net_total": 60.0,
+                "seller_user": "isabella@cima.ve",
+                "seller_name": "Isabella",
+                "ve_ne_comision_opcion": "Mayor 10%",
+                "ve_ne_comision_pct": 10.0,
+                "ve_ne_costo_total": 50.0,
+                "ve_ne_margen_ganancia": 10.0,
+                "ve_ne_comision_monto": 1.0,
+            },
+            {
+                "name": "DN-2",
+                "docstatus": 1,
+                "ve_ne_estado": "Pendiente",
+                "grand_total": 100.0,
+                "net_total": 100.0,
+                "seller_user": "isabella@cima.ve",
+                "seller_name": "Isabella",
+                "ve_ne_comision_opcion": "Detal 8%",
+                "ve_ne_comision_pct": 8.0,
+                "ve_ne_costo_total": 75.0,
+                "ve_ne_margen_ganancia": 25.0,
+                "ve_ne_comision_monto": 2.0,
+            },
+            {
+                "name": "DN-3",
+                "docstatus": 2,
+                "ve_ne_estado": "Cancelada",
+                "grand_total": 50.0,
+                "net_total": 50.0,
+                "seller_user": "isabella@cima.ve",
+                "seller_name": "Isabella",
+                "ve_ne_comision_opcion": "Meta Ads 7%",
+                "ve_ne_comision_pct": 7.0,
+                "ve_ne_costo_total": 30.0,
+                "ve_ne_margen_ganancia": 20.0,
+                "ve_ne_comision_monto": 1.4,
+            },
+        ]
+        summarized = summarize_delivery_notes(notes)
+        self.assertEqual(summarized["summary"]["total_commission"], 3.0)
+        self.assertEqual(summarized["summary"]["paid_commission"], 1.0)
+        self.assertEqual(summarized["summary"]["pending_commission"], 2.0)
+
+        by_seller = summarize_seller_commissions(summarized["notes"])
+        self.assertEqual(len(by_seller), 1)
+        self.assertEqual(by_seller[0]["notes_count"], 2)
+        self.assertEqual(by_seller[0]["commission_total"], 3.0)
+        self.assertEqual(by_seller[0]["paid_commission"], 1.0)
+        self.assertEqual(by_seller[0]["pending_commission"], 2.0)
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        settings_json = (root / "cima_ve" / "cima_ve" / "doctype" / "cima_ve_settings" / "cima_ve_settings.json").read_text(encoding="utf-8")
+        cf_json = (root / "cima_ve" / "fixtures" / "custom_field.json").read_text(encoding="utf-8")
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+
+        self.assertIn("commission_rules", settings_json)
+        self.assertIn("ve_ne_comision_monto", cf_json)
+        self.assertIn("commission_option", vr_js)
+        self.assertIn("calculate_seller_commissions", ne_js)
+        self.assertIn("Calcular Comisiones", ne_js)
 
 
 if __name__ == "__main__":
