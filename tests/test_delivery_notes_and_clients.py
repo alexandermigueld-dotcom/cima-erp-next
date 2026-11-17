@@ -4,7 +4,9 @@ import unittest
 
 from cima_ve.services.client_consumption_service import compute_client_consumption
 from cima_ve.services.delivery_note_service import (
+    append_payment_history,
     compute_delivery_note_settlement_totals,
+    compute_partial_payment_state,
     summarize_delivery_notes,
 )
 
@@ -39,6 +41,51 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertEqual(res["summary"]["paid_total"], 116.0)
         self.assertEqual(res["summary"]["cancelled_count"], 1)
         self.assertEqual(res["summary"]["cancelled_total"], 30.0)
+
+    def test_partial_payment_state_and_history(self) -> None:
+        first = compute_partial_payment_state(116.0, 0.0, 50.0)
+        self.assertEqual(first["estado"], "Pago Parcial")
+        self.assertEqual(first["payment_amount"], 50.0)
+        self.assertEqual(first["new_paid_total"], 50.0)
+        self.assertEqual(first["new_remaining"], 66.0)
+        self.assertFalse(first["is_fully_paid"])
+
+        second = compute_partial_payment_state(116.0, 50.0, 66.0)
+        self.assertEqual(second["estado"], "Pagada")
+        self.assertEqual(second["new_paid_total"], 116.0)
+        self.assertEqual(second["new_remaining"], 0.0)
+        self.assertTrue(second["is_fully_paid"])
+
+        with self.assertRaises(ValueError):
+            compute_partial_payment_state(116.0, 50.0, 0.0)
+        with self.assertRaises(ValueError):
+            compute_partial_payment_state(116.0, 50.0, 70.0)
+
+        hist_list, hist_json = append_payment_history("", {"amount": 50.0, "method": "Zelle"})
+        hist_list2, _ = append_payment_history(hist_json, {"amount": 66.0, "method": "Contado USD"})
+        self.assertEqual(len(hist_list), 1)
+        self.assertEqual(len(hist_list2), 2)
+
+    def test_summarize_delivery_notes_with_partial_payments(self) -> None:
+        notes = [
+            {"name": "DN-1", "docstatus": 1, "ve_ne_estado": "Pendiente", "grand_total": 50.0},
+            {
+                "name": "DN-2",
+                "docstatus": 1,
+                "ve_ne_estado": "Pago Parcial",
+                "ve_ne_factura": "SINV-2",
+                "ve_ne_monto_total": 100.0,
+                "ve_ne_monto_pagado": 40.0,
+                "ve_ne_saldo_pendiente": 60.0,
+                "grand_total": 100.0,
+            },
+        ]
+        res = summarize_delivery_notes(notes)
+        self.assertEqual(res["summary"]["pending_count"], 2)
+        self.assertEqual(res["summary"]["partial_count"], 1)
+        self.assertEqual(res["summary"]["pending_total"], 110.0)
+        self.assertEqual(res["summary"]["paid_total"], 40.0)
+        self.assertEqual(res["notes"][1]["remaining_amount"], 60.0)
 
     def test_compute_client_consumption_with_per_seller_split(self) -> None:
         invoices = [
@@ -102,6 +149,8 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         ws = json.loads((root / "cima_ve" / "fixtures" / "workspace.json").read_text(encoding="utf-8"))
 
         self.assertIn("mark_delivery_note_paid", ne_js)
+        self.assertIn("paid_amount", ne_js)
+        self.assertIn("Pago Parcial", ne_js)
         self.assertIn("cancel_delivery_note", ne_js)
         self.assertIn("get_client_consumption", cc_js)
         self.assertIn("create_quick_delivery_note", vr_js)

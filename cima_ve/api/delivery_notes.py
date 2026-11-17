@@ -4,7 +4,9 @@ import json
 
 from cima_ve.api._compat import whitelist
 from cima_ve.services.delivery_note_service import (
+    append_payment_history,
     compute_delivery_note_settlement_totals,
+    compute_partial_payment_state,
     summarize_delivery_notes,
 )
 from cima_ve.services.seller_pos_service import (
@@ -186,6 +188,10 @@ def get_delivery_notes(
     has_igtf = dn_meta.has_field("ve_ne_aplica_igtf")
     has_factura = dn_meta.has_field("ve_ne_factura")
     has_motivo = dn_meta.has_field("ve_ne_motivo_cancelacion")
+    has_monto_total = dn_meta.has_field("ve_ne_monto_total")
+    has_monto_pagado = dn_meta.has_field("ve_ne_monto_pagado")
+    has_saldo_pendiente = dn_meta.has_field("ve_ne_saldo_pendiente")
+    has_historial_pagos = dn_meta.has_field("ve_ne_historial_pagos")
 
     conditions = ["dn.docstatus IN (1, 2)"]
     params: dict = {}
@@ -230,6 +236,10 @@ def get_delivery_notes(
         "dn.ve_ne_aplica_igtf AS ve_ne_aplica_igtf" if has_igtf else "0 AS ve_ne_aplica_igtf",
         "dn.ve_ne_factura AS ve_ne_factura" if has_factura else "'' AS ve_ne_factura",
         "dn.ve_ne_motivo_cancelacion AS ve_ne_motivo_cancelacion" if has_motivo else "'' AS ve_ne_motivo_cancelacion",
+        "dn.ve_ne_monto_total AS ve_ne_monto_total" if has_monto_total else "0 AS ve_ne_monto_total",
+        "dn.ve_ne_monto_pagado AS ve_ne_monto_pagado" if has_monto_pagado else "0 AS ve_ne_monto_pagado",
+        "dn.ve_ne_saldo_pendiente AS ve_ne_saldo_pendiente" if has_saldo_pendiente else "0 AS ve_ne_saldo_pendiente",
+        "dn.ve_ne_historial_pagos AS ve_ne_historial_pagos" if has_historial_pagos else "'' AS ve_ne_historial_pagos",
     ]
 
     rows = frappe.db.sql(
@@ -281,7 +291,11 @@ def get_delivery_notes(
             r["seller_name"] = frappe.utils.get_fullname(r["seller_user"]) or r["seller_user"]
 
     summarized = summarize_delivery_notes(rows)
-    if status:
+    if status == "Pendiente":
+        summarized["notes"] = [
+            n for n in summarized["notes"] if n["ve_ne_estado"] in ("Pendiente", "Pago Parcial")
+        ]
+    elif status:
         summarized["notes"] = [n for n in summarized["notes"] if n["ve_ne_estado"] == status]
 
     iva_rate, igtf_rate = _get_tax_rates()
@@ -319,8 +333,12 @@ def cancel_delivery_note(delivery_note: str, reason: str = "") -> dict:
         frappe.throw("Esta Nota de Entrega ya está cancelada.")
     if dn.docstatus != 1:
         frappe.throw("Solo se pueden cancelar Notas de Entrega confirmadas.")
-    if getattr(dn, "ve_ne_estado", "") == "Pagada" or getattr(dn, "ve_ne_factura", ""):
-        frappe.throw("Esta Nota de Entrega ya fue pagada y facturada.")
+    if (
+        getattr(dn, "ve_ne_estado", "") in ("Pagada", "Pago Parcial")
+        or getattr(dn, "ve_ne_factura", "")
+        or float(getattr(dn, "ve_ne_monto_pagado", 0) or 0) > 0
+    ):
+        frappe.throw("Esta Nota de Entrega ya tiene pagos registrados o factura asociada.")
 
     resolved_at = str(now_datetime())
     resolved_by = frappe.session.user
@@ -349,8 +367,9 @@ def mark_delivery_note_paid(
     apply_iva: int | bool = 0,
     apply_igtf: int | bool = 0,
     reference: str = "",
+    paid_amount: float | str | None = None,
 ) -> dict:
-    """Marca una Nota de Entrega como Pagada: crea Sales Invoice (con IVA/IGTF elegidos) y Payment Entry."""
+    """Registra un abono o pago total de una Nota de Entrega: crea Sales Invoice (si no existe) y Payment Entry parcial/total."""
     import frappe
     from frappe.utils import now_datetime, today
     from cima_ve.api.seller_pos import _apply_required_sales_metadata
@@ -360,69 +379,96 @@ def mark_delivery_note_paid(
     dn = frappe.get_doc("Delivery Note", delivery_note)
     if dn.docstatus != 1:
         frappe.throw("La Nota de Entrega no está activa (puede estar cancelada o en borrador).")
-    if getattr(dn, "ve_ne_estado", "") == "Pagada" or getattr(dn, "ve_ne_factura", ""):
-        frappe.throw(f"Esta Nota de Entrega ya fue pagada (Factura {getattr(dn, 've_ne_factura', '')}).")
+    if getattr(dn, "ve_ne_estado", "") == "Pagada":
+        frappe.throw(f"Esta Nota de Entrega ya fue pagada en su totalidad (Factura {getattr(dn, 've_ne_factura', '')}).")
 
     clean_method = (payment_method or "").strip()
     if not clean_method:
         frappe.throw("Selecciona un método de pago.")
 
-    iva_flag = bool(int(apply_iva)) if isinstance(apply_iva, (int, str)) else bool(apply_iva)
-    igtf_flag = bool(int(apply_igtf)) if isinstance(apply_igtf, (int, str)) else bool(apply_igtf)
+    requested_amount: float | None = None
+    if paid_amount not in (None, ""):
+        try:
+            requested_amount = float(paid_amount)
+        except (TypeError, ValueError):
+            frappe.throw("El monto a pagar debe ser un número válido.")
+
+    existing_invoice = (getattr(dn, "ve_ne_factura", "") or "").strip()
     iva_rate, igtf_rate = _get_tax_rates()
 
-    from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_invoice
+    if not existing_invoice:
+        iva_flag = bool(int(apply_iva)) if isinstance(apply_iva, (int, str)) else bool(apply_iva)
+        igtf_flag = bool(int(apply_igtf)) if isinstance(apply_igtf, (int, str)) else bool(apply_igtf)
 
-    si = make_sales_invoice(dn.name)
-    si.update_stock = 0
-    si.set("taxes", [])
-    si.ve_igtf_aplicado = 1 if igtf_flag else 0
+        totals = compute_delivery_note_settlement_totals(
+            net_total=float(dn.net_total or dn.grand_total or 0.0),
+            apply_iva=iva_flag,
+            apply_igtf=igtf_flag,
+            iva_rate=iva_rate,
+            igtf_rate=igtf_rate,
+        )
+        try:
+            payment_state = compute_partial_payment_state(totals["grand_total"], 0.0, requested_amount)
+        except ValueError as exc:
+            frappe.throw(str(exc))
 
-    seller_user = getattr(dn, "ve_vendedor_usuario", None) or dn.owner or frappe.session.user
-    seller_name = getattr(dn, "ve_vendedor_nombre", None) or frappe.utils.get_fullname(seller_user) or seller_user
-    si.ve_vendedor_usuario = seller_user
-    si.ve_vendedor_nombre = seller_name
+        from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_invoice
 
-    totals = compute_delivery_note_settlement_totals(
-        net_total=float(dn.net_total or dn.grand_total or 0.0),
-        apply_iva=iva_flag,
-        apply_igtf=igtf_flag,
-        iva_rate=iva_rate,
-        igtf_rate=igtf_rate,
-    )
+        si = make_sales_invoice(dn.name)
+        si.update_stock = 0
+        si.set("taxes", [])
+        si.ve_igtf_aplicado = 1 if igtf_flag else 0
 
-    if iva_flag and totals["iva_amount"] > 0:
-        iva_acc = _resolve_tax_account(dn.company, "iva")
-        if iva_acc:
-            si.append(
-                "taxes",
-                {
-                    "charge_type": "Actual",
-                    "account_head": iva_acc,
-                    "description": f"IVA ({iva_rate:g}%)",
-                    "tax_amount": totals["iva_amount"],
-                },
-            )
+        seller_user = getattr(dn, "ve_vendedor_usuario", None) or dn.owner or frappe.session.user
+        seller_name = getattr(dn, "ve_vendedor_nombre", None) or frappe.utils.get_fullname(seller_user) or seller_user
+        si.ve_vendedor_usuario = seller_user
+        si.ve_vendedor_nombre = seller_name
 
-    if igtf_flag and totals["igtf_amount"] > 0:
-        igtf_acc = _resolve_tax_account(dn.company, "igtf")
-        if igtf_acc:
-            si.append(
-                "taxes",
-                {
-                    "charge_type": "Actual",
-                    "account_head": igtf_acc,
-                    "description": f"IGTF Divisas ({igtf_rate:g}%)",
-                    "tax_amount": totals["igtf_amount"],
-                },
-            )
+        if iva_flag and totals["iva_amount"] > 0:
+            iva_acc = _resolve_tax_account(dn.company, "iva")
+            if iva_acc:
+                si.append(
+                    "taxes",
+                    {
+                        "charge_type": "Actual",
+                        "account_head": iva_acc,
+                        "description": f"IVA ({iva_rate:g}%)",
+                        "tax_amount": totals["iva_amount"],
+                    },
+                )
 
-    si.remarks = f"Liquidación Nota de Entrega {dn.name} | Método: {clean_method}" + (f" | Ref: {reference}" if reference else "")
-    _apply_required_sales_metadata(si, sales_channel=getattr(dn, "canal_venta", "Detal") or "Detal")
-    si.flags.ignore_fiscal_stamp = True
-    si.insert(ignore_permissions=True)
-    si.submit()
+        if igtf_flag and totals["igtf_amount"] > 0:
+            igtf_acc = _resolve_tax_account(dn.company, "igtf")
+            if igtf_acc:
+                si.append(
+                    "taxes",
+                    {
+                        "charge_type": "Actual",
+                        "account_head": igtf_acc,
+                        "description": f"IGTF Divisas ({igtf_rate:g}%)",
+                        "tax_amount": totals["igtf_amount"],
+                    },
+                )
 
+        si.remarks = f"Liquidación Nota de Entrega {dn.name} | Método: {clean_method}" + (f" | Ref: {reference}" if reference else "")
+        _apply_required_sales_metadata(si, sales_channel=getattr(dn, "canal_venta", "Detal") or "Detal")
+        si.flags.ignore_fiscal_stamp = True
+        si.insert(ignore_permissions=True)
+        si.submit()
+    else:
+        si = frappe.get_doc("Sales Invoice", existing_invoice)
+        iva_flag = bool(getattr(dn, "ve_ne_aplica_iva", 0))
+        igtf_flag = bool(getattr(dn, "ve_ne_aplica_igtf", 0))
+        total_to_pay = round(float(si.grand_total or getattr(dn, "ve_ne_monto_total", 0) or 0.0), 2)
+        already_paid_si = round(max(total_to_pay - float(si.outstanding_amount or 0.0), 0.0), 2)
+        already_paid_dn = round(float(getattr(dn, "ve_ne_monto_pagado", 0) or 0.0), 2)
+        already_paid = max(already_paid_si, already_paid_dn)
+        try:
+            payment_state = compute_partial_payment_state(total_to_pay, already_paid, requested_amount)
+        except ValueError as exc:
+            frappe.throw(str(exc))
+
+    pay_amt = payment_state["payment_amount"]
     payment_entry_name = ""
     try:
         from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
@@ -430,9 +476,13 @@ def mark_delivery_note_paid(
         pe = get_payment_entry("Sales Invoice", si.name)
         if frappe.db.exists("Mode of Payment", clean_method):
             pe.mode_of_payment = clean_method
+        pe.paid_amount = pay_amt
+        pe.received_amount = pay_amt
+        if getattr(pe, "references", None):
+            pe.references[0].allocated_amount = pay_amt
         pe.reference_no = (reference or dn.name)[:140]
         pe.reference_date = today()
-        pe.remarks = f"Pago Nota de Entrega {dn.name} ({clean_method})"
+        pe.remarks = f"Pago Nota de Entrega {dn.name} ({clean_method}) — ${pay_amt:.2f}"
         pe.insert(ignore_permissions=True)
         pe.submit()
         payment_entry_name = pe.name
@@ -441,29 +491,67 @@ def mark_delivery_note_paid(
 
     resolved_at = str(now_datetime())
     resolved_by = frappe.session.user
+    new_estado = payment_state["estado"]
+    total_to_pay = payment_state["total_to_pay"]
+    new_paid_total = payment_state["new_paid_total"]
+    new_remaining = payment_state["new_remaining"]
 
-    dn.db_set("ve_ne_estado", "Pagada")
+    existing_hist = getattr(dn, "ve_ne_historial_pagos", "") if dn.meta.has_field("ve_ne_historial_pagos") else ""
+    history_list, history_json = append_payment_history(
+        existing_hist,
+        {
+            "amount": pay_amt,
+            "method": clean_method,
+            "reference": (reference or "").strip(),
+            "paid_at": resolved_at,
+            "user": resolved_by,
+            "payment_entry": payment_entry_name,
+            "paid_total_after": new_paid_total,
+            "remaining_after": new_remaining,
+        },
+    )
+
+    dn.db_set("ve_ne_estado", new_estado)
     dn.db_set("ve_ne_fecha_resolucion", resolved_at)
     dn.db_set("ve_ne_usuario_resolucion", resolved_by)
     dn.db_set("ve_ne_metodo_pago", clean_method)
     dn.db_set("ve_ne_aplica_iva", 1 if iva_flag else 0)
     dn.db_set("ve_ne_aplica_igtf", 1 if igtf_flag else 0)
     dn.db_set("ve_ne_factura", si.name)
-    dn.add_comment(
-        "Comment",
-        f"Nota de Entrega PAGADA por {resolved_by} el {resolved_at}. Método: {clean_method} | IVA: {'Sí' if iva_flag else 'No'} | IGTF: {'Sí' if igtf_flag else 'No'} | Factura: {si.name}",
+    if dn.meta.has_field("ve_ne_monto_total"):
+        dn.db_set("ve_ne_monto_total", total_to_pay)
+    if dn.meta.has_field("ve_ne_monto_pagado"):
+        dn.db_set("ve_ne_monto_pagado", new_paid_total)
+    if dn.meta.has_field("ve_ne_saldo_pendiente"):
+        dn.db_set("ve_ne_saldo_pendiente", new_remaining)
+    if dn.meta.has_field("ve_ne_historial_pagos"):
+        dn.db_set("ve_ne_historial_pagos", history_json)
+
+    comment_msg = (
+        f"Pago registrado por {resolved_by} el {resolved_at}: "
+        f"Abono ${pay_amt:.2f} ({clean_method}) | "
+        f"Acumulado: ${new_paid_total:.2f} / ${total_to_pay:.2f} | "
+        f"Saldo pendiente: ${new_remaining:.2f} | Estado: {new_estado} | Factura: {si.name}"
+        + (f" | Comprobante: {payment_entry_name}" if payment_entry_name else "")
     )
+    dn.add_comment("Comment", comment_msg)
+    if si:
+        si.add_comment("Comment", comment_msg)
 
     return {
         "ok": True,
         "delivery_note": dn.name,
         "sales_invoice": si.name,
         "payment_entry": payment_entry_name,
-        "grand_total": float(si.grand_total or totals["grand_total"]),
-        "ve_ne_estado": "Pagada",
+        "grand_total": total_to_pay,
+        "paid_now": pay_amt,
+        "paid_total": new_paid_total,
+        "remaining_amount": new_remaining,
+        "ve_ne_estado": new_estado,
         "fecha_resolucion": resolved_at,
         "usuario_resolucion": resolved_by,
         "metodo_pago": clean_method,
         "apply_iva": iva_flag,
         "apply_igtf": igtf_flag,
+        "payment_history": history_list,
     }

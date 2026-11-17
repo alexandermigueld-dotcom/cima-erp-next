@@ -46,6 +46,7 @@ class CimaNotasEntrega {
 							<select id="ne-filter-status" class="form-control input-sm">
 								<option value="">Todos</option>
 								<option value="Pendiente" selected>Pendiente por Cobrar</option>
+								<option value="Pago Parcial">Pago Parcial</option>
 								<option value="Pagada">Pagada</option>
 								<option value="Cancelada">Cancelada</option>
 							</select>
@@ -217,24 +218,44 @@ class CimaNotasEntrega {
 					const badgeClass =
 						n.ve_ne_estado === "Pagada"
 							? "cima-ne-badge-pagada"
+							: n.ve_ne_estado === "Pago Parcial"
+							? "cima-ne-badge-parcial"
 							: n.ve_ne_estado === "Cancelada"
 							? "cima-ne-badge-cancelada"
 							: "cima-ne-badge-pendiente";
 
+					const history = Array.isArray(n.payment_history) ? n.payment_history : [];
+					const historyHtml = history.length
+						? `<div class="mt-1 pt-1" style="border-top:1px dashed #cbd5e1;">` +
+						  history
+								.map(
+									(h, idx) =>
+										`<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (${frappe.utils.escape_html(h.reference)})` : ""} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`
+								)
+								.join("") +
+						  `</div>`
+						: "";
+
 					let resolutionHtml = `<span class="text-muted small">Sin procesar</span>`;
-					if (n.ve_ne_estado === "Pagada") {
+					if (n.ve_ne_estado === "Pagada" || n.ve_ne_estado === "Pago Parcial") {
 						const taxTags = [
 							n.ve_ne_aplica_iva ? "IVA" : "Sin IVA",
 							n.ve_ne_aplica_igtf ? "IGTF" : "",
 						]
 							.filter(Boolean)
 							.join(" + ");
+						const balanceLine =
+							n.ve_ne_estado === "Pago Parcial"
+								? `<div style="color:#1e40af;font-weight:700;">Pagado: $${Number(n.paid_amount || 0).toFixed(2)} · Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
+								: `<div>Total pagado: <strong>$${Number(n.paid_amount || n.total_to_pay || n.amount || 0).toFixed(2)}</strong></div>`;
 						resolutionHtml = `
 							<div class="small">
+								${balanceLine}
 								<strong>${frappe.utils.escape_html(n.ve_ne_metodo_pago || "-")}</strong> (${frappe.utils.escape_html(taxTags)})<br>
 								<span class="text-muted">${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")}</span><br>
 								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
 								${n.ve_ne_factura ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
+								${historyHtml}
 							</div>
 						`;
 					} else if (n.ve_ne_estado === "Cancelada") {
@@ -247,13 +268,19 @@ class CimaNotasEntrega {
 						`;
 					}
 
-					const actionsHtml =
-						n.ve_ne_estado === "Pendiente"
-							? `<div class="cima-ne-actions">
-								<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">Pagado</button>
-								<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>
-							</div>`
-							: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`;
+					const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
+					const canCancel = n.ve_ne_estado === "Pendiente" && Number(n.paid_amount || 0) <= 0 && !n.ve_ne_factura;
+					const actionsHtml = isPayable
+						? `<div class="cima-ne-actions">
+							<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
+							${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
+						</div>`
+						: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`;
+
+					const amountCellHtml =
+						n.ve_ne_estado === "Pago Parcial"
+							? `<div>$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}</div><div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
+							: `$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}`;
 
 					return `
 						<tr>
@@ -262,7 +289,7 @@ class CimaNotasEntrega {
 							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}</td>
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
 							<td class="small">${itemsText}${moreItems}${noteDiscountBadge}</td>
-							<td class="text-right font-weight-bold">$${Number(n.amount || 0).toFixed(2)}</td>
+							<td class="text-right font-weight-bold">${amountCellHtml}</td>
 							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
 							<td>${resolutionHtml}</td>
 							<td>${actionsHtml}</td>
@@ -279,6 +306,25 @@ class CimaNotasEntrega {
 		const igtfRate = Number(cfg.igtf_rate || 3);
 		const methods = cfg.payment_methods || ["Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta"];
 		const baseAmount = Number(note.net_total || note.amount || 0);
+		const hasExistingInvoice = Boolean(note.ve_ne_factura);
+		const alreadyPaid = Number(note.paid_amount || 0);
+		const existingTotal = Number(note.total_to_pay || baseAmount);
+		const existingRemaining = hasExistingInvoice
+			? Math.max(Number((existingTotal - alreadyPaid).toFixed(2)), 0)
+			: baseAmount;
+		const history = Array.isArray(note.payment_history) ? note.payment_history : [];
+
+		const historyBanner = history.length
+			? `<div class="mt-2 p-2 small" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;">
+				<div><strong>Pagos anteriores:</strong> $${alreadyPaid.toFixed(2)} de $${existingTotal.toFixed(2)} · <strong>Saldo pendiente: $${existingRemaining.toFixed(2)}</strong></div>
+				${history
+					.map(
+						(h, idx) =>
+							`<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`
+					)
+					.join("")}
+			</div>`
+			: "";
 
 		const d = new frappe.ui.Dialog({
 			title: `Registrar Pago — ${note.name}`,
@@ -286,27 +332,36 @@ class CimaNotasEntrega {
 				{
 					fieldtype: "HTML",
 					fieldname: "client_info",
-					options: `<div class="mb-2"><strong>Cliente:</strong> ${frappe.utils.escape_html(note.customer_name || note.customer)} · <strong>Base:</strong> $${baseAmount.toFixed(2)}</div>`,
+					options: `<div class="mb-2"><strong>Cliente:</strong> ${frappe.utils.escape_html(note.customer_name || note.customer)} · <strong>Base:</strong> $${baseAmount.toFixed(2)}${historyBanner}</div>`,
 				},
 				{
 					label: "Método de Pago",
 					fieldname: "payment_method",
 					fieldtype: "Select",
 					options: methods.join("\n"),
-					default: methods[0],
+					default: note.ve_ne_metodo_pago && methods.includes(note.ve_ne_metodo_pago) ? note.ve_ne_metodo_pago : methods[0],
 					reqd: 1,
 				},
 				{
 					label: `Aplica IVA (${ivaRate}%)`,
 					fieldname: "apply_iva",
 					fieldtype: "Check",
-					default: 1,
+					default: hasExistingInvoice ? (note.ve_ne_aplica_iva ? 1 : 0) : 1,
+					read_only: hasExistingInvoice ? 1 : 0,
 				},
 				{
 					label: `Aplica IGTF (${igtfRate}% Divisas)`,
 					fieldname: "apply_igtf",
 					fieldtype: "Check",
-					default: 0,
+					default: hasExistingInvoice ? (note.ve_ne_aplica_igtf ? 1 : 0) : 0,
+					read_only: hasExistingInvoice ? 1 : 0,
+				},
+				{
+					label: "Monto que pagó ($)",
+					fieldname: "paid_amount",
+					fieldtype: "Float",
+					reqd: 1,
+					default: hasExistingInvoice ? existingRemaining : Number((baseAmount * (1 + ivaRate / 100)).toFixed(2)),
 				},
 				{
 					label: "Referencia / Comprobante (Opcional)",
@@ -319,8 +374,13 @@ class CimaNotasEntrega {
 					options: "",
 				},
 			],
-			primary_action_label: "Confirmar Pagado",
+			primary_action_label: "Registrar Pago",
 			primary_action: (values) => {
+				const payAmt = Number(values.paid_amount);
+				if (isNaN(payAmt) || payAmt <= 0) {
+					frappe.msgprint("Ingresa un monto válido mayor que 0.");
+					return;
+				}
 				frappe.call({
 					method: "cima_ve.api.delivery_notes.mark_delivery_note_paid",
 					args: {
@@ -329,15 +389,19 @@ class CimaNotasEntrega {
 						apply_iva: values.apply_iva ? 1 : 0,
 						apply_igtf: values.apply_igtf ? 1 : 0,
 						reference: values.reference || "",
+						paid_amount: payAmt,
 					},
 					freeze: true,
-					freeze_message: "Registrando pago y factura...",
+					freeze_message: "Registrando pago...",
 					callback: (r) => {
 						if (r.message && r.message.ok) {
 							d.hide();
+							const isDone = r.message.ve_ne_estado === "Pagada";
 							frappe.show_alert({
-								message: `Nota ${note.name} marcada como PAGADA ($${Number(r.message.grand_total).toFixed(2)})`,
-								indicator: "green",
+								message: isDone
+									? `Nota ${note.name} PAGADA en su totalidad ($${Number(r.message.paid_total).toFixed(2)})`
+									: `Abono de $${Number(r.message.paid_now).toFixed(2)} registrado en ${note.name}. Resta: $${Number(r.message.remaining_amount).toFixed(2)}`,
+								indicator: isDone ? "green" : "blue",
 							});
 							this.loadNotes();
 						}
@@ -346,27 +410,56 @@ class CimaNotasEntrega {
 			},
 		});
 
-		const updatePreview = () => {
+		let userEditedAmount = hasExistingInvoice;
+		const computeTargetTotal = () => {
+			if (hasExistingInvoice) {
+				return { iva: 0, igtf: 0, total: existingTotal, remainingBefore: existingRemaining };
+			}
 			const applyIva = !!d.get_value("apply_iva");
 			const applyIgtf = !!d.get_value("apply_igtf");
-			const iva = applyIva ? baseAmount * (ivaRate / 100) : 0;
+			const iva = Number((applyIva ? baseAmount * (ivaRate / 100) : 0).toFixed(2));
 			const subWithIva = baseAmount + iva;
-			const igtf = applyIgtf ? subWithIva * (igtfRate / 100) : 0;
-			const total = subWithIva + igtf;
+			const igtf = Number((applyIgtf ? subWithIva * (igtfRate / 100) : 0).toFixed(2));
+			const total = Number((subWithIva + igtf).toFixed(2));
+			return { iva, igtf, total, remainingBefore: total };
+		};
+
+		const updatePreview = (syncAmount = false) => {
+			const calc = computeTargetTotal();
+			if (syncAmount && !userEditedAmount) {
+				d.set_value("paid_amount", calc.remainingBefore);
+			}
+			const rawPay = parseFloat(d.get_value("paid_amount"));
+			const payAmt = isNaN(rawPay) ? 0 : rawPay;
+			const remainingAfter = Math.max(Number((calc.remainingBefore - payAmt).toFixed(2)), 0);
+			const invalidAmt = payAmt <= 0 || payAmt > calc.remainingBefore + 0.01;
+			const nextStateLabel = invalidAmt
+				? `<span class="text-danger">Monto inválido (máximo $${calc.remainingBefore.toFixed(2)})</span>`
+				: remainingAfter <= 0.01
+				? `<span style="color:#15803d;font-weight:700;">Quedará PAGADA (saldrá de pendientes)</span>`
+				: `<span style="color:#1e40af;font-weight:700;">Quedará PAGO PARCIAL (seguirá visible hasta pagar $${remainingAfter.toFixed(2)} restantes)</span>`;
+
 			d.fields_dict.totals_preview.$wrapper.html(`
 				<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:6px;">
-					<div>Base: <strong>$${baseAmount.toFixed(2)}</strong></div>
-					<div>IVA (${applyIva ? ivaRate : 0}%): <strong>$${iva.toFixed(2)}</strong></div>
-					<div>IGTF (${applyIgtf ? igtfRate : 0}%): <strong>$${igtf.toFixed(2)}</strong></div>
-					<div style="font-size:16px;margin-top:4px;color:#15803d;"><strong>Total a cobrar: $${total.toFixed(2)}</strong></div>
+					${hasExistingInvoice ? `<div>Total Facturado: <strong>$${calc.total.toFixed(2)}</strong> · Ya Pagado: <strong>$${alreadyPaid.toFixed(2)}</strong></div>` : `<div>Base: <strong>$${baseAmount.toFixed(2)}</strong> · IVA: <strong>$${calc.iva.toFixed(2)}</strong> · IGTF: <strong>$${calc.igtf.toFixed(2)}</strong></div>`}
+					<div>Saldo pendiente actual: <strong>$${calc.remainingBefore.toFixed(2)}</strong></div>
+					<div>Este pago: <strong>$${payAmt.toFixed(2)}</strong> · Saldo restante: <strong>$${remainingAfter.toFixed(2)}</strong></div>
+					<div class="mt-1 small">${nextStateLabel}</div>
 				</div>
 			`);
 		};
 
-		d.fields_dict.apply_iva.$input.on("change", updatePreview);
-		d.fields_dict.apply_igtf.$input.on("change", updatePreview);
+		if (!hasExistingInvoice) {
+			d.fields_dict.apply_iva.$input.on("change", () => updatePreview(true));
+			d.fields_dict.apply_igtf.$input.on("change", () => updatePreview(true));
+		}
+		d.fields_dict.paid_amount.$input.on("input change", () => {
+			userEditedAmount = true;
+			updatePreview(false);
+		});
 		d.show();
-		updatePreview();
+		updatePreview(!hasExistingInvoice);
+		setTimeout(() => d.fields_dict.paid_amount.$input.focus().select(), 80);
 	}
 
 	openCancelDialog(note) {

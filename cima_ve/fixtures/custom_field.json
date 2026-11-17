@@ -218,7 +218,7 @@
   "label": "Estado Nota de Entrega",
   "module": "Cima VE",
   "name": "Delivery Note-ve_ne_estado",
-  "options": "Pendiente\nPagada\nCancelada",
+  "options": "Pendiente\nPago Parcial\nPagada\nCancelada",
   "read_only": 1
  },
  {
@@ -299,6 +299,56 @@
   "label": "Motivo de Cancelación",
   "module": "Cima VE",
   "name": "Delivery Note-ve_ne_motivo_cancelacion",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_monto_total",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_motivo_cancelacion",
+  "label": "Total a Cobrar (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_monto_total",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_monto_pagado",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_monto_total",
+  "label": "Monto Pagado (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_monto_pagado",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "default": "0",
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_saldo_pendiente",
+  "fieldtype": "Float",
+  "insert_after": "ve_ne_monto_pagado",
+  "label": "Saldo Pendiente (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_saldo_pendiente",
+  "precision": "2",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
+  "fieldname": "ve_ne_historial_pagos",
+  "fieldtype": "Long Text",
+  "insert_after": "ve_ne_saldo_pendiente",
+  "label": "Historial de Pagos (Nota de Entrega)",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_historial_pagos",
   "read_only": 1
  }
 ]
