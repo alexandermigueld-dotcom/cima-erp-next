@@ -5,8 +5,8 @@ app_description = "Integración de Cashea y Facturación Fiscal Digital SENIAT p
 app_email = "cimaelectronic@gmail.com"
 app_license = "MIT"
 
-app_include_js = ["/assets/cima_ve/js/seller_shell.js?v=3"]
-app_include_css = ["/assets/cima_ve/css/seller_shell.css?v=3"]
+app_include_js = ["/assets/cima_ve/js/seller_shell.js?v=4"]
+app_include_css = ["/assets/cima_ve/css/seller_shell.css?v=4"]
 
 role_home_page = {
     "Sales User": "vendedor",

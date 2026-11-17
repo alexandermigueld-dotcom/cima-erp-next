@@ -57,20 +57,72 @@
     );
   }
 
-  function addQuickNav() {
-    if (document.getElementById("cima-quick-nav")) return;
-    const bar = document.createElement("div");
-    bar.id = "cima-quick-nav";
-    bar.innerHTML =
+  function getNavbarContainer() {
+    return document.querySelector("header.navbar .container, header.navbar .container-fluid, header.navbar");
+  }
+
+  function updateActiveSellerTab() {
+    const tabs = document.getElementById("cima-seller-tabs");
+    if (!tabs) return;
+    const current = frappe.get_route ? frappe.get_route()[0] : "";
+    tabs.querySelectorAll("a[data-route]").forEach((a) => {
+      a.classList.toggle("is-active", a.getAttribute("data-route") === current);
+    });
+  }
+
+  function addSellerTopTabs() {
+    if (document.getElementById("cima-seller-tabs")) {
+      updateActiveSellerTab();
+      return true;
+    }
+    const container = getNavbarContainer();
+    if (!container) return false;
+
+    const nav = document.createElement("nav");
+    nav.id = "cima-seller-tabs";
+    nav.setAttribute("aria-label", "Navegación Vendedor");
+    nav.innerHTML =
       '<a href="/app/venta-rapida" data-route="venta-rapida">Facturaci\u00f3n R\u00e1pida</a>' +
       '<a href="/app/notas-entrega" data-route="notas-entrega">Notas de Entrega</a>';
-    document.body.appendChild(bar);
-    bar.addEventListener("click", (e) => {
+    container.insertBefore(nav, container.firstChild);
+
+    nav.addEventListener("click", (e) => {
       const a = e.target.closest("a[data-route]");
       if (!a) return;
       e.preventDefault();
       frappe.set_route(a.getAttribute("data-route"));
     });
+    updateActiveSellerTab();
+    return true;
+  }
+
+  function addAdminNavbarButton() {
+    if (document.getElementById("cima-admin-pos-item")) return true;
+    const navList =
+      document.querySelector("header.navbar .navbar-collapse > ul.navbar-nav:last-of-type") ||
+      document.querySelector("header.navbar ul.navbar-nav:last-of-type");
+    if (!navList) return false;
+
+    const li = document.createElement("li");
+    li.id = "cima-admin-pos-item";
+    li.className = "nav-item";
+    li.innerHTML =
+      '<a id="cima-admin-pos-btn" class="nav-link" href="/app/venta-rapida" title="Ir a Facturaci\u00f3n R\u00e1pida">' +
+      '<span class="cima-admin-pos-full">Facturaci\u00f3n R\u00e1pida</span>' +
+      '<span class="cima-admin-pos-short">Facturaci\u00f3n</span>' +
+      "</a>";
+    navList.insertBefore(li, navList.firstChild);
+
+    li.querySelector("a").addEventListener("click", (e) => {
+      e.preventDefault();
+      frappe.set_route(LANDING);
+    });
+    return true;
+  }
+
+  function removeLegacyQuickNav() {
+    const legacy = document.getElementById("cima-quick-nav");
+    if (legacy) legacy.remove();
   }
 
   let started = false;
@@ -78,14 +130,24 @@
   function init() {
     if (started) return;
     if (typeof frappe === "undefined" || !frappe.session || frappe.session.user === "Guest") return;
+    if (!getNavbarContainer()) return;
     started = true;
     addPwaMeta();
-    addQuickNav();
-    if (isAdmin()) return;
+    removeLegacyQuickNav();
+
+    if (isAdmin()) {
+      addAdminNavbarButton();
+      return;
+    }
+
     document.body.classList.add("cima-seller-mode");
+    addSellerTopTabs();
     blockNavigation();
     enforceSellerRoute();
-    $(document).on("page-change", enforceSellerRoute);
+    $(document).on("page-change", () => {
+      enforceSellerRoute();
+      updateActiveSellerTab();
+    });
   }
 
   function boot() {

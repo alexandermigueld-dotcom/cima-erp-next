@@ -22,11 +22,15 @@ class SellerShellTests(unittest.TestCase):
             name = icon["src"].rsplit("/", 1)[-1]
             self.assertTrue((ROOT / "public" / "images" / name).exists(), name)
 
-    def test_shell_js_limits_non_admin_routes(self) -> None:
+    def test_shell_js_limits_non_admin_routes_and_avoids_floating_overlay(self) -> None:
         js = (ROOT / "public" / "js" / "seller_shell.js").read_text(encoding="utf-8")
+        css = (ROOT / "public" / "css" / "seller_shell.css").read_text(encoding="utf-8")
         self.assertIn('"venta-rapida", "notas-entrega"', js)
         self.assertIn("System Manager", js)
         self.assertIn("cima-seller-mode", js)
+        self.assertIn("cima-seller-tabs", js)
+        self.assertIn("cima-admin-pos-btn", js)
+        self.assertNotIn("position: fixed", css)
 
     def test_vendedor_page_redirects(self) -> None:
         py = (ROOT / "www" / "vendedor.py").read_text(encoding="utf-8")
