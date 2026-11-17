@@ -35,6 +35,15 @@
     return "$" + Number(val || 0).toFixed(2);
   }
 
+  function fxRate() {
+    const fx = state.bootstrap?.exchange_rate || {};
+    return Number(fx.adjusted_rate || fx.bcv_rate || 0);
+  }
+
+  function moneyBs(usd) {
+    return "Bs. " + Number(usd || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   function escapeHtml(str) {
     return String(str || "")
       .replace(/&/g, "&amp;")
@@ -283,6 +292,15 @@
     document.getElementById("cart-subtotal").textContent = money(t.taxable_base);
     document.getElementById("cart-iva").textContent = money(t.iva_amount);
     document.getElementById("cart-grand").textContent = money(t.grand_total);
+    const rate = fxRate();
+    const bsRow = document.getElementById("cart-grand-bs-row");
+    if (bsRow) {
+      bsRow.style.display = rate > 0 ? "" : "none";
+      if (rate > 0) {
+        document.getElementById("cart-grand-bs-label").textContent = `Equivalente Bs (Tasa ${rate.toFixed(2)})`;
+        document.getElementById("cart-grand-bs").textContent = moneyBs(Number(t.grand_total || 0) * rate);
+      }
+    }
     document.getElementById("cart-cashea-hint").textContent =
       `Con Cashea: ${money(t.cashea.down_payment_usd)} inicial + 3 cuotas de ${money(t.cashea.installment_usd)}`;
   }
