@@ -1,8 +1,14 @@
 # Cima VE (`cima-erp-next`)
 
-Aplicación personalizada de Frappe/ERPNext y entorno de simulación local para **CIMA Electronic VE**, orientada a:
-- Pagos con **Cashea** (checkout + webhook firmado).
-- **Facturación Fiscal Digital SENIAT** vía Imprenta Digital por API (IVA 16%, exentos e IGTF 3% en divisas).
+Aplicación personalizada de Frappe/ERPNext v16 para **CIMA Electronic VE**, desplegada en Frappe Cloud (`https://cimaelectronicve.v.frappe.cloud`), orientada a:
+- **Facturación Rápida (`venta-rapida`)**: POS simplificado para vendedores con emisión de **Notas de Entrega**, precios personalizados por ítem, descuentos automáticos/manuales, comisiones por margen y totales en USD y Bolívares (`Bs.`).
+- **Notas de Entrega (`notas-entrega`)**: Flujo de pago diferido con abonos parciales, comprobantes/referencias, congelamiento histórico en Bs, cancelación con restauración de inventario y cálculo de comisiones por vendedor.
+- **Tienda Web (`/tienda`)**: Catálogo público con stock real, proveedores de envío, login con email/Google y creación de Notas de Entrega con comprobante de pago.
+- **Tasas de Cambio y Brecha**: Sincronización horaria de BCV, Monitor y Binance P2P (`USDT/VES`) con cálculo de brecha.
+- **Métricas y Clientes (`metricas-ventas`, `clientes-consumo`)**: Reportes exclusivos para administradores (`System Manager`).
+- **Cashea & Facturación Fiscal Digital SENIAT**: Clientes HTTP y modo simulación local.
+
+> **Documentación técnica completa para agentes y desarrolladores:** consulta [`AGENTS.md`](AGENTS.md) y [`CONTEXT.md`](CONTEXT.md).
 
 ---
 

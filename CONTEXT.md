@@ -1,6 +1,7 @@
 # Project & Conversation Context — `cima-erp-next` (`cima_ve`)
 
-**Last updated:** 2026-11-15  
+**Last updated:** 2026-11-17  
+**Technical / Agent Guide:** See [`AGENTS.md`](AGENTS.md) for architecture, Nota de Entrega lifecycle, Frappe v16 gotchas, and Frappe Cloud deployment instructions.
 **GitHub Repository:** `https://github.com/josephnowak/cima-erp-next`  
 **Local Git Repo Path:** `C:\Users\usuario\PycharmProjects\cima-erp-next`  
 **Previous Workspace (migrated from):** `C:\Users\usuario\PycharmProjects\PythonProject\cima-erp-next`
@@ -26,7 +27,7 @@
 - **Internal Site ID:** `erpnext-yfl-bqf.v.frappe.cloud`
 - **Plan:** `USD 25` (`price_usd: 25.0`, `private_benches: 1`, `cpu_time_per_day: 2.0h`, `max_storage_usage: 25 GB`, `max_database_usage: 1 GB`, `offsite_backups: 1`).
 - **Region / Cluster:** `N. Virginia, USA` (`Virginia`).
-- **Current Bench:** `bench-52215` (`bench-52215-000002-f94v`, **Private Bench**, `public: 0`, `Version 16`).
+- **Current Bench:** `bench-52215` (latest deployed release `bench-52215-000022-f94v`, **Private Bench**, `public: 0`, `Version 16`).
 - **Installed Custom App:** `cima_ve` (`0.1.0`, connected to `https://github.com/josephnowak/cima-erp-next`, `main`).
 
 ### ERPNext Instance (`https://cimaelectronicve.v.frappe.cloud`)
@@ -73,9 +74,13 @@ Local Python virtual environment (`.venv`, Python 3.14) is managed with `uv`:
 - **`cima_ve/services/fiscal_printer.py` & `cima_ve/api/fiscal.py`**: Venezuelan tax breakdown (IVA 16%, exempt, IGTF 3%) and simulated/REST Imprenta Digital stamping (`on_submit` hook in `cima_ve/overrides/sales_invoice.py`).
 - **`cima_ve/services/seller_pos_service.py` & `cima_ve/api/seller_pos.py`**: Backend endpoints for the simplified seller POS (`get_seller_bootstrap`, `preview_cart_pricing`, `search_inventory_and_prices`, `search_customers`, `quick_create_customer`, `create_quick_invoice`), with automatic `canal_venta`, `tipo_pedido`, and `sales_team` metadata handling.
 - **`cima_ve/services/storefront_service.py` & `cima_ve/api/storefront.py` & `cima_ve/www/tienda.html`**: Public Amazon-style storefront (`/tienda`) with live `Bin` stock, `Pricing Rule` volume discounts, Google/email registration, optional RIF/fiscal profile, placeholder SVG, and 6 payment methods (Cashea, Google Pay/Cards, Pago Móvil, Zelle, Binance Pay, Transferencia).
-- **`cima_ve/cima_ve/page/venta_rapida/`**: Native Frappe Page (`venta-rapida.json`, `.js`, `.css`) with **+ INICIAR FACTURACIÓN** flow, direct manual quantity input, `Canal de Venta`/`Vendedor` selectors, and searchable **Inventario y Precios** tab.
-- **`cima_ve/fixtures/workspace.json`**: `Facturación Cima` workspace for sellers (`Sales User`).
-- **`tests/`**: 18 unit tests (`test_cashea_simulator.py`, `test_fiscal_simulator.py`, `test_seller_pos.py`, `test_storefront.py`) — all passing.
+- **`cima_ve/services/delivery_note_service.py` & `cima_ve/api/delivery_notes.py`**: Full Nota de Entrega (`Delivery Note`) lazy-payment workflow: creation (`create_quick_delivery_note`), item-level custom pricing (`compute_custom_price_breakdown`), configurable automatic/manual discounts, margin-based seller commissions (`Meta Ads 7%`, `Detal 8%`, `Mayor 10%`), partial payments (`Pago Parcial`), non-cash payment proof uploads, historical Bs freeze (`ve_ne_tasa_cambio`, `ve_ne_monto_bs`, `ve_ne_monto_pagado_bs`), cancellation, and Email/WhatsApp notifications.
+- **`cima_ve/services/exchange_rate_service.py` & `cima_ve/api/exchange_rates.py`**: Hourly & manual BCV / Monitor (DolarAPI) + Binance P2P (`USDT/VES`) exchange rate and brecha sync.
+- **`cima_ve/services/sales_metrics_service.py` & `cima_ve/api/sales_metrics.py` & `cima_ve/cima_ve/page/metricas_ventas/`**: Admin-only (`System Manager`) sales KPIs and per-user breakdown.
+- **`cima_ve/services/client_consumption_service.py` & `cima_ve/api/client_consumption.py` & `cima_ve/cima_ve/page/clientes_consumo/`**: Admin-only (`System Manager`) client consumption and per-seller breakdown.
+- **`cima_ve/cima_ve/page/venta_rapida/` & `notas_entrega/`**: Simplified seller POS (`Facturación Rápida`, restricted to sellers + admins) and Nota de Entrega management (`notas-entrega`: full controls for `System Manager`, read-only own notes for `Sales User`).
+- **`cima_ve/fixtures/workspace.json`**: `Facturación Cima` (`Facturación Rápida` for sellers) and `Administración Cima` (`System Manager` only).
+- **`tests/`**: 40 unit tests (`test_cashea_simulator.py`, `test_fiscal_simulator.py`, `test_seller_pos.py`, `test_storefront.py`, `test_sales_metrics.py`, `test_delivery_notes_and_clients.py`, `test_exchange_rates.py`) — all passing.
 
 ---
 
