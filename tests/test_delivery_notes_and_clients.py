@@ -166,7 +166,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("Pago Parcial", ne_js)
         self.assertIn("ne-payment-screenshot", ne_js)
         self.assertIn("screenshot_url", ne_js)
-        self.assertIn("cancel_delivery_note", ne_js)
+        self.assertIn("revert_delivery_note", ne_js)
         self.assertIn("get_client_consumption", cc_js)
         self.assertIn("create_quick_delivery_note", vr_js)
         self.assertIn("cima-enable-discount", vr_js)
@@ -468,7 +468,11 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn('root.on("click", "[data-action=\'open-delivery-notes\']", () => {\n\t\t\tfrappe.set_route("notas-entrega");', vr_js)
         self.assertIn("Ver en Mis Notas de Entrega", vr_js)
         self.assertIn("upload_delivery_note_payment_proof", ne_js)
-        self.assertIn("const canCancel = isAdmin &&", ne_js)
+        self.assertIn("const canRevert = isAdmin &&", ne_js)
+        self.assertIn("data-revert-dn", ne_js)
+        self.assertIn("revert_delivery_note", ne_js)
+        self.assertIn('"Pagar"', ne_js)
+        self.assertNotIn("data-cancel-dn", ne_js)
 
 
 class DeliveryNotePermissionTests(unittest.TestCase):

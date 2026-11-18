@@ -83,7 +83,86 @@ class AdminOnlyEndpointTests(unittest.TestCase):
             with self.assertRaises(FakePermissionError):
                 dn.cancel_delivery_note("MAT-DN-1")
             with self.assertRaises(FakePermissionError):
+                dn.revert_delivery_note("MAT-DN-1")
+            with self.assertRaises(FakePermissionError):
                 dn.calculate_seller_commissions()
+
+    def test_admin_revert_delivery_note_cancels_payments_invoice_and_note(self) -> None:
+        import json
+        from cima_ve.api import delivery_notes as dn
+
+        fk = make_fake_frappe(["System Manager"], user="admin@x.com")
+        cancelled: list[str] = []
+        db_sets: dict[str, object] = {}
+        comments: list[str] = []
+
+        class FakeMeta:
+            @staticmethod
+            def has_field(name: str) -> bool:
+                return True
+
+        class FakePE:
+            def __init__(self, name: str):
+                self.name = name
+                self.docstatus = 1
+                self.flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                self.docstatus = 2
+                cancelled.append(self.name)
+
+        class FakeSI:
+            name = "SINV-9"
+            docstatus = 1
+            ve_numero_control = ""
+            flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                self.docstatus = 2
+                cancelled.append(self.name)
+
+        class FakeDN:
+            name = "MAT-DN-9"
+            docstatus = 1
+            ve_ne_estado = "Pagada"
+            ve_ne_factura = "SINV-9"
+            ve_ne_historial_pagos = json.dumps([{"payment_entry": "PE-2"}])
+            meta = FakeMeta()
+            flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                self.docstatus = 2
+                cancelled.append(self.name)
+
+            def db_set(self, k, v):
+                db_sets[k] = v
+
+            def add_comment(self, kind, msg):
+                comments.append(msg)
+
+        docs = {
+            ("Delivery Note", "MAT-DN-9"): FakeDN(),
+            ("Sales Invoice", "SINV-9"): FakeSI(),
+            ("Payment Entry", "PE-1"): FakePE("PE-1"),
+            ("Payment Entry", "PE-2"): FakePE("PE-2"),
+        }
+        fk.get_doc = lambda dt, name: docs[(dt, name)]
+        fk.get_all = lambda dt, filters=None, pluck=None: ["PE-1"]
+
+        with patched_frappe(fk):
+            res = dn.revert_delivery_note("MAT-DN-9", reason="Cliente devolvió")
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["ve_ne_estado"], "Cancelada")
+        self.assertEqual(res["reverted_invoice"], "SINV-9")
+        self.assertEqual(res["reverted_payment_entries"], ["PE-1", "PE-2"])
+        self.assertEqual(cancelled, ["PE-1", "PE-2", "SINV-9", "MAT-DN-9"])
+        self.assertEqual(db_sets["ve_ne_estado"], "Cancelada")
+        self.assertEqual(db_sets["ve_ne_monto_pagado"], 0.0)
+        self.assertEqual(db_sets["ve_ne_saldo_pendiente"], 0.0)
+        self.assertEqual(db_sets["ve_ne_monto_pagado_bs"], 0.0)
+        self.assertEqual(db_sets["ve_ne_motivo_cancelacion"], "Cliente devolvió")
+        self.assertTrue(any("REVERTIDA" in c for c in comments))
 
     def test_seller_cannot_settle_or_upload_proof_for_other_sellers_note(self) -> None:
         from cima_ve.api import delivery_notes as dn

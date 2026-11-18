@@ -30,7 +30,7 @@ class CimaNotasEntrega {
 				<div class="cima-ne-hero">
 					<div>
 						<h2 id="ne-hero-title">Control de Notas de Entrega — Cima Electronic</h2>
-						<p id="ne-hero-subtitle">Seguimiento de despachos pendientes de pago: marca como Pagado (con método e impuestos) o Cancela para devolver el stock.</p>
+						<p id="ne-hero-subtitle">Seguimiento de despachos pendientes de pago: registra pagos (con método e impuestos) o revierte una nota (solo admin).</p>
 					</div>
 					<div class="d-flex" style="gap:8px;flex-wrap:wrap;">
 						<button type="button" class="btn btn-sm btn-primary" data-action="go-pos">+ Nueva Nota de Entrega</button>
@@ -134,10 +134,10 @@ class CimaNotasEntrega {
 			if (note) this.openPaidDialog(note);
 		});
 
-		root.on("click", "[data-cancel-dn]", (e) => {
-			const dnName = $(e.currentTarget).attr("data-cancel-dn");
+		root.on("click", "[data-revert-dn]", (e) => {
+			const dnName = $(e.currentTarget).attr("data-revert-dn");
 			const note = (this.data?.notes || []).find((n) => n.name === dnName);
-			if (note) this.openCancelDialog(note);
+			if (note) this.openRevertDialog(note);
 		});
 	}
 
@@ -164,7 +164,7 @@ class CimaNotasEntrega {
 		if (isAdmin) {
 			this.wrapper.find("#ne-hero-title").text("Control de Notas de Entrega — Cima Electronic");
 			this.wrapper.find("#ne-hero-subtitle").text(
-				"Seguimiento de despachos pendientes de pago: marca como Pagado (con método e impuestos) o Cancela para devolver el stock."
+				"Seguimiento de despachos pendientes de pago: registra pagos (con método e impuestos) o revierte una nota (solo admin)."
 			);
 		} else {
 			this.wrapper.find("#ne-hero-title").text("Mis Notas de Entrega");
@@ -341,15 +341,17 @@ class CimaNotasEntrega {
 					}
 
 					const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
-					const canCancel = isAdmin && n.ve_ne_estado === "Pendiente" && Number(n.paid_amount || 0) <= 0 && !n.ve_ne_factura;
-					const actionsHtml = isPayable
-						? `<div class="cima-ne-actions">
-							<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
-							${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
-						</div>`
-						: isAdmin
-						? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
-						: `<span class="text-muted small">Completada</span>`;
+					const canRevert = isAdmin && n.ve_ne_estado !== "Cancelada";
+					const actionsHtml =
+						isPayable || canRevert
+							? `<div class="cima-ne-actions">
+								${isPayable ? `<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagar" : "Pagar"}</button>` : ""}
+								${canRevert ? `<button type="button" class="btn btn-xs btn-danger" data-revert-dn="${frappe.utils.escape_html(n.name)}">Revertir</button>` : ""}
+								${!isPayable && isAdmin ? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>` : ""}
+							</div>`
+							: isAdmin
+							? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
+							: `<span class="text-muted small">${n.ve_ne_estado === "Cancelada" ? "Cancelada" : "Completada"}</span>`;
 
 					const fx = this.data?.config?.exchange_rate || {};
 					const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
@@ -679,36 +681,40 @@ class CimaNotasEntrega {
 		setTimeout(() => d.fields_dict.paid_amount.$input.focus().select(), 80);
 	}
 
-	openCancelDialog(note) {
+	openRevertDialog(note) {
+		const hasPayments = Boolean(note.ve_ne_factura) || Number(note.paid_amount || 0) > 0;
+		const detailsMsg = hasPayments
+			? `Al revertir <strong>${frappe.utils.escape_html(note.name)}</strong>, se devolverán los productos al inventario y se anularán automáticamente la factura (<strong>${frappe.utils.escape_html(note.ve_ne_factura || "asociada")}</strong>) y los pagos registrados. El registro se conservará en el historial como <strong>Cancelada</strong>.`
+			: `Al revertir <strong>${frappe.utils.escape_html(note.name)}</strong>, todos los productos serán devueltos al inventario automáticamente y el registro se conservará en el historial como <strong>Cancelada</strong>.`;
 		const d = new frappe.ui.Dialog({
-			title: `Cancelar Nota de Entrega — ${note.name}`,
+			title: `Revertir Nota de Entrega — ${note.name}`,
 			fields: [
 				{
 					fieldtype: "HTML",
 					fieldname: "warn",
-					options: `<p>Al cancelar <strong>${frappe.utils.escape_html(note.name)}</strong>, todos los productos serán devueltos al inventario automáticamente.</p>`,
+					options: `<p>${detailsMsg}</p>`,
 				},
 				{
-					label: "Motivo de Cancelación (Opcional)",
+					label: "Motivo de Reversión (Opcional)",
 					fieldname: "reason",
 					fieldtype: "Small Text",
 				},
 			],
-			primary_action_label: "Confirmar Cancelación",
+			primary_action_label: "Confirmar Reversión",
 			primary_action: (values) => {
 				frappe.call({
-					method: "cima_ve.api.delivery_notes.cancel_delivery_note",
+					method: "cima_ve.api.delivery_notes.revert_delivery_note",
 					args: {
 						delivery_note: note.name,
 						reason: values.reason || "",
 					},
 					freeze: true,
-					freeze_message: "Cancelando y restaurando inventario...",
+					freeze_message: "Revirtiendo Nota de Entrega, pagos e inventario...",
 					callback: (r) => {
 						if (r.message && r.message.ok) {
 							d.hide();
 							frappe.show_alert({
-								message: `Nota ${note.name} cancelada e inventario restaurado.`,
+								message: `Nota ${note.name} revertida y marcada como Cancelada.`,
 								indicator: "orange",
 							});
 							this.loadNotes();

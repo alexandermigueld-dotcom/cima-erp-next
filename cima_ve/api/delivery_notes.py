@@ -853,6 +853,112 @@ def cancel_delivery_note(delivery_note: str, reason: str = "") -> dict:
     }
 
 
+@whitelist()
+def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
+    """Revierte una Nota de Entrega (pendiente, pago parcial o pagada), cancelando pagos/factura y devolviendo inventario."""
+    import frappe
+    from frappe.utils import now_datetime
+    from cima_ve.services.delivery_note_service import parse_payment_history
+
+    frappe.only_for("System Manager")
+
+    dn = frappe.get_doc("Delivery Note", delivery_note)
+    if dn.docstatus == 2 or getattr(dn, "ve_ne_estado", "") == "Cancelada":
+        frappe.throw("Esta Nota de Entrega ya está cancelada.")
+    if dn.docstatus != 1:
+        frappe.throw("Solo se pueden revertir Notas de Entrega confirmadas.")
+
+    resolved_at = str(now_datetime())
+    resolved_by = frappe.session.user
+    clean_reason = (reason or "").strip() or "Revertida desde Notas de Entrega"
+
+    reverted_payment_entries: list[str] = []
+    reverted_invoice = ""
+    si_name = (getattr(dn, "ve_ne_factura", "") or "").strip()
+
+    if si_name:
+        si = frappe.get_doc("Sales Invoice", si_name)
+        fiscal_ctrl = (getattr(si, "ve_numero_control", "") or "").strip()
+        if fiscal_ctrl:
+            frappe.throw(
+                f"La factura {si.name} tiene número de control fiscal ({fiscal_ctrl}). Emite una Nota de Crédito en lugar de revertir."
+            )
+
+        pe_names: list[str] = []
+        try:
+            linked_pes = frappe.get_all(
+                "Payment Entry Reference",
+                filters={
+                    "reference_doctype": "Sales Invoice",
+                    "reference_name": si.name,
+                    "docstatus": 1,
+                },
+                pluck="parent",
+            )
+            pe_names.extend([p for p in (linked_pes or []) if p])
+        except Exception:
+            pass
+
+        hist_raw = getattr(dn, "ve_ne_historial_pagos", "") if dn.meta.has_field("ve_ne_historial_pagos") else ""
+        for entry in parse_payment_history(hist_raw):
+            pe_id = (entry.get("payment_entry") or "").strip()
+            if pe_id:
+                pe_names.append(pe_id)
+
+        seen_pes: set[str] = set()
+        for pe_name in pe_names:
+            if pe_name in seen_pes:
+                continue
+            seen_pes.add(pe_name)
+            pe = frappe.get_doc("Payment Entry", pe_name)
+            if pe.docstatus == 1:
+                pe.flags.ignore_permissions = True
+                pe.cancel()
+                reverted_payment_entries.append(pe.name)
+
+        si = frappe.get_doc("Sales Invoice", si_name)
+        if si.docstatus == 1:
+            si.flags.ignore_permissions = True
+            si.cancel()
+            reverted_invoice = si.name
+
+    dn = frappe.get_doc("Delivery Note", delivery_note)
+    dn.flags.ignore_permissions = True
+    dn.cancel()
+    dn.db_set("ve_ne_estado", "Cancelada")
+    dn.db_set("ve_ne_fecha_resolucion", resolved_at)
+    dn.db_set("ve_ne_usuario_resolucion", resolved_by)
+    dn.db_set("ve_ne_motivo_cancelacion", clean_reason)
+    if dn.meta.has_field("ve_ne_monto_pagado"):
+        dn.db_set("ve_ne_monto_pagado", 0.0)
+    if dn.meta.has_field("ve_ne_saldo_pendiente"):
+        dn.db_set("ve_ne_saldo_pendiente", 0.0)
+    if dn.meta.has_field("ve_ne_monto_pagado_bs"):
+        dn.db_set("ve_ne_monto_pagado_bs", 0.0)
+
+    extra_parts = []
+    if reverted_invoice:
+        extra_parts.append(f"Factura revertida: {reverted_invoice}")
+    if reverted_payment_entries:
+        extra_parts.append(f"Pagos revertidos: {', '.join(reverted_payment_entries)}")
+    extra_txt = f" ({'; '.join(extra_parts)})" if extra_parts else ""
+
+    dn.add_comment(
+        "Comment",
+        f"Nota de Entrega REVERTIDA por {resolved_by} el {resolved_at}. Motivo: {clean_reason}. Inventario restaurado.{extra_txt}",
+    )
+
+    return {
+        "ok": True,
+        "delivery_note": dn.name,
+        "ve_ne_estado": "Cancelada",
+        "reverted_invoice": reverted_invoice,
+        "reverted_payment_entries": reverted_payment_entries,
+        "fecha_resolucion": resolved_at,
+        "usuario_resolucion": resolved_by,
+    }
+
+
 def _can_user_settle_delivery_note(dn, user: str) -> bool:
     """Admins pueden cobrar cualquier Nota de Entrega; los vendedores solo las suyas."""
     import frappe
