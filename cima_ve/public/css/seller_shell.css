@@ -2,13 +2,22 @@
 #cima-seller-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   margin-right: auto;
-  overflow-x: auto;
+  overflow: visible;
   white-space: nowrap;
+}
+.cima-seller-tabs-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
   scrollbar-width: none;
 }
-#cima-seller-tabs::-webkit-scrollbar {
+.cima-seller-tabs-links::-webkit-scrollbar {
   display: none;
 }
 #cima-seller-tabs a {
@@ -22,6 +31,121 @@
   background: var(--control-bg, #f1f5f9);
   text-decoration: none;
   transition: background 0.15s ease, color 0.15s ease;
+}
+.cima-seller-user-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+#cima-seller-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 999px;
+  background: var(--card-bg, #ffffff);
+  color: var(--text-color, #1e293b);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#cima-seller-user-btn:hover {
+  background: var(--control-bg, #f1f5f9);
+}
+.cima-seller-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.cima-seller-user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cima-seller-caret {
+  font-size: 10px;
+  opacity: 0.7;
+}
+#cima-seller-user-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 1050;
+  min-width: 210px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+#cima-seller-user-menu[hidden] {
+  display: none !important;
+}
+.cima-seller-user-header {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  white-space: normal;
+}
+.cima-seller-menu-name {
+  font-size: 13px;
+  color: var(--text-color, #0f172a);
+}
+.cima-seller-menu-email {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  word-break: break-all;
+}
+.cima-seller-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-color, #1e293b);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cima-seller-menu-item:hover {
+  background: var(--control-bg, #f1f5f9);
+}
+.cima-seller-menu-item.is-danger {
+  color: #dc2626;
+}
+.cima-seller-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+}
+.cima-seller-profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+}
+.cima-seller-profile-rows p {
+  margin: 0 0 4px;
+  font-size: 13px;
 }
 #cima-seller-tabs.cima-seller-tabs-docked {
   position: sticky;
@@ -95,6 +219,12 @@
   #cima-seller-tabs a {
     padding: 6px 10px;
     font-size: 12px;
+  }
+  .cima-seller-user-name {
+    display: none;
+  }
+  #cima-seller-user-btn {
+    padding: 3px 7px 3px 3px;
   }
   #cima-admin-pos-btn {
     padding: 5px 9px !important;

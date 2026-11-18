@@ -98,18 +98,103 @@
     });
   }
 
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function getSellerUserInfo() {
+    const email = (frappe.session && frappe.session.user) || "";
+    const fullName =
+      (frappe.session && frappe.session.user_fullname) ||
+      (frappe.boot && frappe.boot.user && frappe.boot.user.full_name) ||
+      email;
+    const parts = String(fullName || email).trim().split(/\s+/).filter(Boolean);
+    const initials =
+      parts.length >= 2
+        ? (parts[0][0] + parts[1][0]).toUpperCase()
+        : String(fullName || email).slice(0, 2).toUpperCase() || "U";
+    const roles = ((typeof frappe !== "undefined" && frappe.user_roles) || []).filter(
+      (r) => !["All", "Guest", "Desk User"].includes(r)
+    );
+    return { email, fullName, initials, roles: roles.length ? roles.join(", ") : "Vendedor" };
+  }
+
+  function logoutSeller() {
+    if (typeof frappe !== "undefined" && frappe.app && typeof frappe.app.logout === "function") {
+      frappe.app.logout();
+      return;
+    }
+    fetch("/api/method/logout", { method: "POST" }).finally(() => {
+      window.location.href = "/login";
+    });
+  }
+
+  function openSellerProfileDialog() {
+    const info = getSellerUserInfo();
+    const html =
+      '<div class="cima-seller-profile-card">' +
+      '<div class="cima-seller-profile-avatar">' + escapeHtml(info.initials) + "</div>" +
+      '<div class="cima-seller-profile-rows">' +
+      '<p><strong>Nombre:</strong> ' + escapeHtml(info.fullName) + "</p>" +
+      '<p><strong>Usuario / Correo:</strong> ' + escapeHtml(info.email) + "</p>" +
+      '<p><strong>Rol:</strong> ' + escapeHtml(info.roles) + "</p>" +
+      "</div>" +
+      "</div>";
+
+    if (typeof frappe !== "undefined" && frappe.ui && frappe.ui.Dialog) {
+      const d = new frappe.ui.Dialog({
+        title: "Mi Perfil",
+        fields: [{ fieldtype: "HTML", fieldname: "profile_html", options: html }],
+        primary_action_label: "Cerrar",
+        primary_action: () => d.hide(),
+        secondary_action_label: "Cerrar Sesi\u00f3n",
+        secondary_action: () => {
+          d.hide();
+          logoutSeller();
+        },
+      });
+      d.show();
+      return;
+    }
+    if (typeof frappe !== "undefined" && frappe.msgprint) {
+      frappe.msgprint({ title: "Mi Perfil", message: html });
+    }
+  }
+
   function addSellerTopTabs() {
     if (document.getElementById("cima-seller-tabs")) {
       updateActiveSellerTab();
       return true;
     }
 
+    const info = getSellerUserInfo();
     const nav = document.createElement("nav");
     nav.id = "cima-seller-tabs";
     nav.setAttribute("aria-label", "Navegación Vendedor");
     nav.innerHTML =
+      '<div class="cima-seller-tabs-links">' +
       '<a href="/app/venta-rapida" data-route="venta-rapida">Facturaci\u00f3n R\u00e1pida</a>' +
-      '<a href="/app/notas-entrega" data-route="notas-entrega">Notas de Entrega</a>';
+      '<a href="/app/notas-entrega" data-route="notas-entrega">Notas de Entrega</a>' +
+      "</div>" +
+      '<div class="cima-seller-user-wrap">' +
+      '<button type="button" id="cima-seller-user-btn" aria-haspopup="true" aria-expanded="false" title="Perfil y sesi\u00f3n">' +
+      '<span class="cima-seller-avatar">' + escapeHtml(info.initials) + "</span>" +
+      '<span class="cima-seller-user-name">' + escapeHtml(info.fullName) + "</span>" +
+      '<span class="cima-seller-caret">&#9662;</span>' +
+      "</button>" +
+      '<div id="cima-seller-user-menu" role="menu" hidden>' +
+      '<div class="cima-seller-user-header">' +
+      '<strong class="cima-seller-menu-name">' + escapeHtml(info.fullName) + "</strong>" +
+      '<small class="cima-seller-menu-email">' + escapeHtml(info.email) + "</small>" +
+      "</div>" +
+      '<button type="button" class="cima-seller-menu-item" data-seller-action="profile" role="menuitem">Mi Perfil</button>' +
+      '<button type="button" class="cima-seller-menu-item is-danger" data-seller-action="logout" role="menuitem">Cerrar Sesi\u00f3n</button>' +
+      "</div>" +
+      "</div>";
 
     const navbarContainer = getNavbarContainer();
     if (navbarContainer) {
@@ -124,11 +209,42 @@
       host.insertBefore(nav, host.firstChild);
     }
 
+    const userBtn = nav.querySelector("#cima-seller-user-btn");
+    const userMenu = nav.querySelector("#cima-seller-user-menu");
+    const closeMenu = () => {
+      if (!userMenu || userMenu.hidden) return;
+      userMenu.hidden = true;
+      if (userBtn) userBtn.setAttribute("aria-expanded", "false");
+    };
+
     nav.addEventListener("click", (e) => {
       const a = e.target.closest("a[data-route]");
-      if (!a) return;
-      e.preventDefault();
-      frappe.set_route(a.getAttribute("data-route"));
+      if (a) {
+        e.preventDefault();
+        closeMenu();
+        frappe.set_route(a.getAttribute("data-route"));
+        return;
+      }
+      if (e.target.closest("#cima-seller-user-btn")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const nextHidden = !userMenu.hidden;
+        userMenu.hidden = nextHidden;
+        userBtn.setAttribute("aria-expanded", nextHidden ? "false" : "true");
+        return;
+      }
+      const actionBtn = e.target.closest("button[data-seller-action]");
+      if (actionBtn) {
+        e.preventDefault();
+        closeMenu();
+        const action = actionBtn.getAttribute("data-seller-action");
+        if (action === "profile") openSellerProfileDialog();
+        if (action === "logout") logoutSeller();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".cima-seller-user-wrap")) closeMenu();
     });
     updateActiveSellerTab();
     return true;
