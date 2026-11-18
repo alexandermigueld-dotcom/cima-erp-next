@@ -838,6 +838,7 @@ def cancel_delivery_note(delivery_note: str, reason: str = "") -> dict:
     resolved_by = frappe.session.user
     clean_reason = (reason or "").strip() or "Cancelada desde Notas de Entrega"
 
+    dn.flags.ignore_permissions = True
     dn.cancel()
     dn.db_set("ve_ne_estado", "Cancelada")
     dn.db_set("ve_ne_fecha_resolucion", resolved_at)
