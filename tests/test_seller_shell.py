@@ -32,6 +32,8 @@ class SellerShellTests(unittest.TestCase):
         self.assertIn("cima-admin-pos-btn", js)
         self.assertIn("cima-home-shortcuts", js)
         self.assertIn("cima-page-pos-btn", js)
+        self.assertIn("#page-desktop", js)
+        self.assertIn("frappe-mobile-nav", css)
         self.assertNotIn("position: fixed", css)
 
     def test_vendedor_page_redirects(self) -> None:

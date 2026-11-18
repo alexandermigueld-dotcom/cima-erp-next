@@ -25,9 +25,27 @@
     );
   }
 
+  function getRoute() {
+    if (typeof frappe === "undefined" || !frappe.get_route) return [];
+    return frappe.get_route() || [];
+  }
+
+  function isAllowedSellerRoute(route) {
+    if (!route || !route.length) return false;
+    if (ALLOWED_ROUTES.includes(route[0])) return true;
+    return route[0] === "cima-ve" && ALLOWED_ROUTES.includes(route[1]);
+  }
+
+  function currentAllowedSlug(route) {
+    if (!route || !route.length) return "";
+    if (ALLOWED_ROUTES.includes(route[0])) return route[0];
+    if (route[0] === "cima-ve" && ALLOWED_ROUTES.includes(route[1])) return route[1];
+    return "";
+  }
+
   function enforceSellerRoute() {
-    const route = frappe.get_route ? frappe.get_route() : [];
-    if (!route.length || !ALLOWED_ROUTES.includes(route[0])) {
+    const route = getRoute();
+    if (!isAllowedSellerRoute(route)) {
       frappe.set_route(LANDING);
     }
   }
@@ -36,7 +54,11 @@
     document.addEventListener(
       "click",
       (e) => {
-        const el = e.target.closest && e.target.closest(".navbar-home, .navbar-brand, .app-logo, .search-bar, #navbar-search, .awesomplete");
+        const el =
+          e.target.closest &&
+          e.target.closest(
+            ".navbar-home, .navbar-brand, .app-logo, .search-bar, #navbar-search, .awesomplete, .body-sidebar-container, frappe-mobile-nav, flow-launcher, a[href='/desk'], a[href='/app'], a[href*='/search']"
+          );
         if (el) {
           e.preventDefault();
           e.stopPropagation();
@@ -66,7 +88,7 @@
   function updateActiveSellerTab() {
     const tabs = document.getElementById("cima-seller-tabs");
     if (!tabs) return;
-    const current = frappe.get_route ? frappe.get_route()[0] : "";
+    const current = currentAllowedSlug(getRoute());
     tabs.querySelectorAll("a[data-route]").forEach((a) => {
       a.classList.toggle("is-active", a.getAttribute("data-route") === current);
     });
@@ -135,12 +157,14 @@
   }
 
   function addAdminPageHeaderButton() {
-    const route = frappe.get_route ? frappe.get_route() : [];
-    if (route[0] === LANDING) return;
+    const route = getRoute();
+    if (route[0] === LANDING || (route[0] === "cima-ve" && route[1] === LANDING)) return;
     const pages = document.querySelectorAll(".page-container");
     pages.forEach((page) => {
-      if (page.style.display === "none") return;
-      const actions = page.querySelector(".page-head .page-actions");
+      if (getComputedStyle(page).display === "none") return;
+      const head = page.querySelector(".page-head");
+      if (!head || getComputedStyle(head).display === "none") return;
+      const actions = head.querySelector(".page-actions");
       if (!actions || actions.querySelector(".cima-page-pos-btn")) return;
       const btn = document.createElement("a");
       btn.className = "btn btn-primary btn-sm cima-page-pos-btn";
@@ -155,24 +179,25 @@
   }
 
   function isHomeRoute() {
-    const route = frappe.get_route ? frappe.get_route() : [];
+    const route = getRoute();
     const r0 = (route[0] || "").toLowerCase();
     const r1 = (route[1] || "").toLowerCase();
     return (
       !r0 ||
       r0 === "home" ||
       r0 === "desktop" ||
-      (r0 === "workspaces" && (!r1 || r1 === "home"))
+      (r0 === "workspaces" && (!r1 || r1 === "home")) ||
+      !!document.querySelector("#page-desktop .layout-main-section")
     );
   }
 
   function addAdminHomeShortcut() {
     if (!isHomeRoute()) return;
     const containers = document.querySelectorAll(
-      ".workspace-page .layout-main-section, .desktop-container, #page-Workspaces .layout-main-section"
+      "#page-desktop .layout-main-section, .workspace-page .layout-main-section, .desktop-container, #page-Workspaces .layout-main-section"
     );
     containers.forEach((container) => {
-      if (container.offsetParent === null) return;
+      if (getComputedStyle(container).display === "none") return;
       if (container.querySelector("#cima-home-shortcuts")) return;
       const box = document.createElement("div");
       box.id = "cima-home-shortcuts";
@@ -198,9 +223,8 @@
 
   function init() {
     if (started) return;
-    if (typeof frappe === "undefined" || !frappe.session || frappe.session.user === "Guest") return;
+    if (typeof frappe === "undefined" || !frappe.session || frappe.session.user === "Guest" || !frappe.get_route) return;
     if (!document.querySelector(".main-section, .page-head, header.navbar, #toolbar-user")) return;
-    started = true;
     addPwaMeta();
     removeLegacyQuickNav();
 
@@ -208,11 +232,15 @@
       addAdminNavbarButton();
       addAdminPageHeaderButton();
       addAdminHomeShortcut();
+      setTimeout(addAdminHomeShortcut, 300);
+      setTimeout(addAdminHomeShortcut, 900);
       $(document).on("page-change", () => {
         addAdminNavbarButton();
         addAdminPageHeaderButton();
         setTimeout(addAdminHomeShortcut, 150);
+        setTimeout(addAdminHomeShortcut, 500);
       });
+      started = true;
       return;
     }
 
@@ -225,6 +253,7 @@
       addSellerTopTabs();
       updateActiveSellerTab();
     });
+    started = true;
   }
 
   function boot() {

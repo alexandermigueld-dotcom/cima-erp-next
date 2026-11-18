@@ -123,6 +123,10 @@ body.cima-seller-mode header.navbar .navbar-collapse {
   margin-left: auto;
 }
 body.cima-seller-mode .layout-side-section,
+body.cima-seller-mode .body-sidebar-container,
+body.cima-seller-mode frappe-mobile-nav,
+body.cima-seller-mode .desk-mobile-nav,
+body.cima-seller-mode flow-launcher,
 body.cima-seller-mode .sidebar-toggle-btn,
 body.cima-seller-mode .search-bar,
 body.cima-seller-mode #navbar-search,
