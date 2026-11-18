@@ -124,13 +124,20 @@
   }
 
   function logoutSeller() {
-    if (typeof frappe !== "undefined" && frappe.app && typeof frappe.app.logout === "function") {
-      frappe.app.logout();
+    const goLogin = () => {
+      window.location.href = "/login";
+    };
+    if (typeof frappe !== "undefined" && frappe.call) {
+      frappe.call({
+        method: "logout",
+        callback: goLogin,
+        error: () => {
+          fetch("/api/method/logout", { method: "POST", credentials: "same-origin" }).finally(goLogin);
+        },
+      });
       return;
     }
-    fetch("/api/method/logout", { method: "POST" }).finally(() => {
-      window.location.href = "/login";
-    });
+    fetch("/api/method/logout", { method: "POST", credentials: "same-origin" }).finally(goLogin);
   }
 
   function openSellerProfileDialog() {
