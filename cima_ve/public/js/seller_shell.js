@@ -165,9 +165,22 @@
     }
   }
 
+  function refreshSellerUserInfo() {
+    const info = getSellerUserInfo();
+    const avatar = document.querySelector("#cima-seller-user-btn .cima-seller-avatar");
+    const nameEl = document.querySelector("#cima-seller-user-btn .cima-seller-user-name");
+    const menuName = document.querySelector("#cima-seller-user-menu .cima-seller-menu-name");
+    const menuEmail = document.querySelector("#cima-seller-user-menu .cima-seller-menu-email");
+    if (avatar) avatar.textContent = info.initials;
+    if (nameEl) nameEl.textContent = info.fullName;
+    if (menuName) menuName.textContent = info.fullName;
+    if (menuEmail) menuEmail.textContent = info.email;
+  }
+
   function addSellerTopTabs() {
     if (document.getElementById("cima-seller-tabs")) {
       updateActiveSellerTab();
+      refreshSellerUserInfo();
       return true;
     }
 
@@ -343,7 +356,7 @@
 
   function init() {
     if (started) return;
-    if (typeof frappe === "undefined" || !frappe.session || frappe.session.user === "Guest" || !frappe.get_route) return;
+    if (typeof frappe === "undefined" || !frappe.session || !frappe.session.user || frappe.session.user === "Guest" || !frappe.get_route) return;
     if (!document.querySelector(".main-section, .page-head, header.navbar, #toolbar-user")) return;
     addPwaMeta();
     removeLegacyQuickNav();
@@ -366,6 +379,8 @@
 
     document.body.classList.add("cima-seller-mode");
     addSellerTopTabs();
+    setTimeout(refreshSellerUserInfo, 400);
+    setTimeout(refreshSellerUserInfo, 1200);
     blockNavigation();
     enforceSellerRoute();
     $(document).on("page-change", () => {
