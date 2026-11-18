@@ -43,11 +43,15 @@
     return "";
   }
 
+  function isAllowedPath() {
+    const path = (window.location && window.location.pathname) || "";
+    return ALLOWED_ROUTES.some((slug) => path.endsWith("/" + slug) || path.includes("/" + slug + "/"));
+  }
+
   function enforceSellerRoute() {
     const route = getRoute();
-    if (!isAllowedSellerRoute(route)) {
-      frappe.set_route(LANDING);
-    }
+    if (isAllowedSellerRoute(route) || isAllowedPath()) return;
+    frappe.set_route(LANDING);
   }
 
   function blockNavigation() {
