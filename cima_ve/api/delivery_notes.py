@@ -940,6 +940,49 @@ def mark_delivery_note_paid(
     dn = frappe.get_doc("Delivery Note", delivery_note)
     if not _can_user_settle_delivery_note(dn, current_user):
         frappe.throw("Solo puedes registrar pagos en tus propias Notas de Entrega.", frappe.PermissionError)
+
+    if current_user == "Administrator" or "System Manager" in frappe.get_roles(current_user):
+        return _mark_delivery_note_paid_impl(
+            dn=dn,
+            resolved_by=current_user,
+            payment_method=payment_method,
+            apply_iva=apply_iva,
+            apply_igtf=apply_igtf,
+            reference=reference,
+            paid_amount=paid_amount,
+            screenshot_url=screenshot_url,
+        )
+
+    frappe.set_user("Administrator")
+    try:
+        dn_admin = frappe.get_doc("Delivery Note", delivery_note)
+        return _mark_delivery_note_paid_impl(
+            dn=dn_admin,
+            resolved_by=current_user,
+            payment_method=payment_method,
+            apply_iva=apply_iva,
+            apply_igtf=apply_igtf,
+            reference=reference,
+            paid_amount=paid_amount,
+            screenshot_url=screenshot_url,
+        )
+    finally:
+        frappe.set_user(current_user)
+
+
+def _mark_delivery_note_paid_impl(
+    dn,
+    resolved_by: str,
+    payment_method: str,
+    apply_iva: int | bool = 0,
+    apply_igtf: int | bool = 0,
+    reference: str = "",
+    paid_amount: float | str | None = None,
+    screenshot_url: str = "",
+) -> dict:
+    import frappe
+    from frappe.utils import now_datetime, today
+    from cima_ve.api.seller_pos import _apply_required_sales_metadata
     if dn.docstatus != 1:
         frappe.throw("La Nota de Entrega no está activa (puede estar cancelada o en borrador).")
     if getattr(dn, "ve_ne_estado", "") == "Pagada":
@@ -1057,7 +1100,6 @@ def mark_delivery_note_paid(
         frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {dn.name}")
 
     resolved_at = str(now_datetime())
-    resolved_by = frappe.session.user
     new_estado = payment_state["estado"]
     total_to_pay = payment_state["total_to_pay"]
     new_paid_total = payment_state["new_paid_total"]

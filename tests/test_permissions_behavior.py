@@ -45,6 +45,7 @@ def make_fake_frappe(roles: list[str], user: str = "seller@x.com", allow_doc: bo
     fk.has_permission = has_permission
     fk.throw = throw
     fk.get_roles = lambda user=None: list(roles)
+    fk.set_user = lambda u: setattr(fk.session, "user", u)
     fk.get_doc = lambda *a, **k: FakeDoc()
     fk.whitelist = lambda *a, **k: (lambda fn: fn)
     fk.__path__ = []
@@ -146,6 +147,7 @@ class AdminOnlyEndpointTests(unittest.TestCase):
                 dn.mark_delivery_note_paid("MAT-DN-1", "Efectivo")
             self.assertNotIsInstance(ctx.exception, FakePermissionError)
             self.assertIn("ya fue pagada", str(ctx.exception))
+            self.assertEqual(fk.session.user, "seller@x.com")
 
     def test_seller_cannot_read_admin_reports(self) -> None:
         from cima_ve.api import client_consumption, sales_metrics
