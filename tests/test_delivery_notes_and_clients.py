@@ -250,10 +250,10 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         roles = {r["role"] for r in ne_json.get("roles", [])}
         self.assertTrue({"Sales User", "Sales Manager", "System Manager"}.issubset(roles))
 
-        # notas_entrega.js hides admin controls for non-admins
+        # notas_entrega.js hides admin-only controls for non-admins while allowing own-note payment
         self.assertIn("applyRoleUi()", ne_js)
         self.assertIn("Mis Notas de Entrega", ne_js)
-        self.assertIn("Solo lectura", ne_js)
+        self.assertIn("Completada", ne_js)
 
         # venta_rapida.js exposes Notas de Entrega button to all sellers, keeping metrics/clients admin-only
         self.assertIn('data-action="open-delivery-notes">\n\t\t\t\t\t\t\tNotas de Entrega', vr_js)
@@ -464,8 +464,11 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
     def test_non_admin_can_open_notas_entrega_from_venta_rapida(self) -> None:
         root = pathlib.Path(__file__).resolve().parent.parent
         vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
         self.assertIn('root.on("click", "[data-action=\'open-delivery-notes\']", () => {\n\t\t\tfrappe.set_route("notas-entrega");', vr_js)
         self.assertIn("Ver en Mis Notas de Entrega", vr_js)
+        self.assertIn("upload_delivery_note_payment_proof", ne_js)
+        self.assertIn("const canCancel = isAdmin &&", ne_js)
 
 
 class DeliveryNotePermissionTests(unittest.TestCase):

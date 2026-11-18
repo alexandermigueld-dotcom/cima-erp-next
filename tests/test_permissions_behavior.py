@@ -44,6 +44,7 @@ def make_fake_frappe(roles: list[str], user: str = "seller@x.com", allow_doc: bo
     fk.only_for = only_for
     fk.has_permission = has_permission
     fk.throw = throw
+    fk.get_roles = lambda user=None: list(roles)
     fk.get_doc = lambda *a, **k: FakeDoc()
     fk.whitelist = lambda *a, **k: (lambda fn: fn)
     fk.__path__ = []
@@ -74,16 +75,77 @@ def patched_frappe(fake):
 
 
 class AdminOnlyEndpointTests(unittest.TestCase):
-    def test_seller_cannot_cancel_or_settle_or_calculate_commissions(self) -> None:
+    def test_seller_cannot_cancel_or_calculate_commissions(self) -> None:
         from cima_ve.api import delivery_notes as dn
 
         with patched_frappe(make_fake_frappe(["Sales User"])):
             with self.assertRaises(FakePermissionError):
                 dn.cancel_delivery_note("MAT-DN-1")
             with self.assertRaises(FakePermissionError):
-                dn.mark_delivery_note_paid("MAT-DN-1", "Efectivo")
-            with self.assertRaises(FakePermissionError):
                 dn.calculate_seller_commissions()
+
+    def test_seller_cannot_settle_or_upload_proof_for_other_sellers_note(self) -> None:
+        from cima_ve.api import delivery_notes as dn
+
+        fk = make_fake_frappe(["Sales User"], user="seller@x.com")
+
+        class OtherDoc:
+            name = "MAT-DN-2"
+            docstatus = 1
+            ve_vendedor_usuario = "other@x.com"
+            owner = "other@x.com"
+
+        fk.get_doc = lambda *a, **k: OtherDoc()
+        with patched_frappe(fk):
+            with self.assertRaises(FakePermissionError):
+                dn.mark_delivery_note_paid("MAT-DN-2", "Efectivo")
+            with self.assertRaises(FakePermissionError):
+                dn.upload_delivery_note_payment_proof("MAT-DN-2", "proof.png", "AAAA")
+
+    def test_seller_can_upload_proof_and_pass_ownership_for_own_note(self) -> None:
+        from cima_ve.api import delivery_notes as dn
+
+        fk = make_fake_frappe(["Sales User"], user="seller@x.com")
+        inserted = []
+
+        class OwnDoc:
+            name = "MAT-DN-1"
+            docstatus = 1
+            ve_vendedor_usuario = "seller@x.com"
+            owner = "seller@x.com"
+            ve_ne_estado = "Pagada"
+            ve_ne_factura = "SINV-1"
+
+        class FakeFileDoc:
+            def __init__(self, payload):
+                self.name = "FILE-1"
+                self.file_url = "/private/files/proof.png"
+                self.file_name = payload["file_name"]
+                self.flags = types.SimpleNamespace(ignore_permissions=False)
+                self._payload = payload
+
+            def insert(self, ignore_permissions=False):
+                inserted.append((self._payload, ignore_permissions, self.flags.ignore_permissions))
+
+        def fake_get_doc(arg1, arg2=None):
+            if isinstance(arg1, dict) and arg1.get("doctype") == "File":
+                return FakeFileDoc(arg1)
+            return OwnDoc()
+
+        fk.get_doc = fake_get_doc
+        with patched_frappe(fk):
+            res = dn.upload_delivery_note_payment_proof("MAT-DN-1", "proof.png", "aGVsbG8=")
+            self.assertEqual(res["file_url"], "/private/files/proof.png")
+            self.assertEqual(len(inserted), 1)
+            self.assertTrue(inserted[0][1])
+            self.assertEqual(inserted[0][0]["attached_to_name"], "MAT-DN-1")
+            self.assertEqual(inserted[0][0]["is_private"], 1)
+
+            # mark_delivery_note_paid passes ownership check and reaches state validation ("Pagada")
+            with self.assertRaises(Exception) as ctx:
+                dn.mark_delivery_note_paid("MAT-DN-1", "Efectivo")
+            self.assertNotIsInstance(ctx.exception, FakePermissionError)
+            self.assertIn("ya fue pagada", str(ctx.exception))
 
     def test_seller_cannot_read_admin_reports(self) -> None:
         from cima_ve.api import client_consumption, sales_metrics

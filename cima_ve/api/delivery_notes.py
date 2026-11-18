@@ -707,22 +707,20 @@ def get_delivery_notes(
     )
     summarized["commission_by_seller"] = summarize_seller_commissions(summarized["notes"])
 
-    if is_admin:
-        iva_rate, igtf_rate = _get_tax_rates()
-        modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
-        payment_options = modes or ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]
-        for default_m in ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
-            if default_m not in payment_options:
-                payment_options.append(default_m)
+    iva_rate, igtf_rate = _get_tax_rates()
+    modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
+    payment_options = modes or ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]
+    for default_m in ["Efectivo USD", "Efectivo Bs", "Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta", "Zelle", "Binance Pay", "Transferencia Bancaria"]:
+        if default_m not in payment_options:
+            payment_options.append(default_m)
 
+    if is_admin:
         sellers = sorted({n.get("seller_user") for n in rows if n.get("seller_user")})
         seller_options = [
             {"user": u, "fullname": frappe.utils.get_fullname(u) or u}
             for u in sellers
         ]
     else:
-        iva_rate, igtf_rate = 16.0, 3.0
-        payment_options = []
         seller_options = [
             {"user": current_user, "fullname": frappe.utils.get_fullname(current_user) or current_user}
         ]
@@ -855,6 +853,71 @@ def cancel_delivery_note(delivery_note: str, reason: str = "") -> dict:
     }
 
 
+def _can_user_settle_delivery_note(dn, user: str) -> bool:
+    """Admins pueden cobrar cualquier Nota de Entrega; los vendedores solo las suyas."""
+    import frappe
+
+    if not user or user == "Guest":
+        return False
+    if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+        return True
+    seller_user = (getattr(dn, "ve_vendedor_usuario", None) or "").strip() or (getattr(dn, "owner", None) or "").strip()
+    return bool(seller_user and seller_user == user)
+
+
+@whitelist()
+def upload_delivery_note_payment_proof(delivery_note: str, file_name: str, file_data_base64: str) -> dict:
+    """Sube una captura o comprobante de pago para una Nota de Entrega propia (o cualquiera si es admin)."""
+    import base64
+    import os
+    import frappe
+
+    current_user = frappe.session.user
+    if not current_user or current_user == "Guest":
+        frappe.throw("Debes iniciar sesión para subir comprobantes.", frappe.PermissionError)
+
+    dn = frappe.get_doc("Delivery Note", delivery_note)
+    if not _can_user_settle_delivery_note(dn, current_user):
+        frappe.throw("Solo puedes subir comprobantes para tus propias Notas de Entrega.", frappe.PermissionError)
+
+    clean_name = os.path.basename((file_name or "comprobante.png").strip()) or "comprobante.png"
+    ext = os.path.splitext(clean_name)[1].lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"}:
+        frappe.throw("Formato no soportado. Sube una imagen (PNG, JPG, WEBP) o PDF.")
+
+    raw_b64 = (file_data_base64 or "").strip()
+    if "," in raw_b64 and raw_b64.startswith("data:"):
+        raw_b64 = raw_b64.split(",", 1)[1]
+    if not raw_b64:
+        frappe.throw("El archivo está vacío.")
+
+    try:
+        content = base64.b64decode(raw_b64)
+    except Exception:
+        frappe.throw("No se pudo decodificar el archivo adjunto.")
+
+    if len(content) > 5 * 1024 * 1024:
+        frappe.throw("El comprobante supera el tamaño máximo permitido de 5 MB.")
+
+    file_doc = frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": clean_name,
+            "attached_to_doctype": "Delivery Note",
+            "attached_to_name": dn.name,
+            "is_private": 1,
+            "content": content,
+        }
+    )
+    file_doc.flags.ignore_permissions = True
+    file_doc.insert(ignore_permissions=True)
+    return {
+        "file_id": file_doc.name,
+        "file_url": file_doc.file_url,
+        "file_name": file_doc.file_name,
+    }
+
+
 @whitelist()
 def mark_delivery_note_paid(
     delivery_note: str,
@@ -870,9 +933,13 @@ def mark_delivery_note_paid(
     from frappe.utils import now_datetime, today
     from cima_ve.api.seller_pos import _apply_required_sales_metadata
 
-    frappe.only_for("System Manager")
+    current_user = frappe.session.user
+    if not current_user or current_user == "Guest":
+        frappe.throw("Debes iniciar sesión para registrar pagos.", frappe.PermissionError)
 
     dn = frappe.get_doc("Delivery Note", delivery_note)
+    if not _can_user_settle_delivery_note(dn, current_user):
+        frappe.throw("Solo puedes registrar pagos en tus propias Notas de Entrega.", frappe.PermissionError)
     if dn.docstatus != 1:
         frappe.throw("La Nota de Entrega no está activa (puede estar cancelada o en borrador).")
     if getattr(dn, "ve_ne_estado", "") == "Pagada":
@@ -1063,8 +1130,10 @@ def mark_delivery_note_paid(
         + (f" | Captura: {clean_screenshot}" if clean_screenshot else "")
         + (f" | Comprobante: {payment_entry_name}" if payment_entry_name else "")
     )
+    dn.flags.ignore_permissions = True
     dn.add_comment("Comment", comment_msg)
     if si:
+        si.flags.ignore_permissions = True
         si.add_comment("Comment", comment_msg)
 
     return {

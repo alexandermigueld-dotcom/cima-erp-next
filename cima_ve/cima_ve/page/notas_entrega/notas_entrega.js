@@ -169,7 +169,7 @@ class CimaNotasEntrega {
 		} else {
 			this.wrapper.find("#ne-hero-title").text("Mis Notas de Entrega");
 			this.wrapper.find("#ne-hero-subtitle").text(
-				"Consulta únicamente las Notas de Entrega emitidas por tu usuario."
+				"Consulta las Notas de Entrega emitidas por tu usuario y registra tus pagos con comprobante."
 			);
 		}
 	}
@@ -341,15 +341,15 @@ class CimaNotasEntrega {
 					}
 
 					const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
-					const canCancel = n.ve_ne_estado === "Pendiente" && Number(n.paid_amount || 0) <= 0 && !n.ve_ne_factura;
-					const actionsHtml = isAdmin
-						? isPayable
-							? `<div class="cima-ne-actions">
-								<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
-								${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
-							</div>`
-							: `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
-						: `<span class="text-muted small">Solo lectura</span>`;
+					const canCancel = isAdmin && n.ve_ne_estado === "Pendiente" && Number(n.paid_amount || 0) <= 0 && !n.ve_ne_factura;
+					const actionsHtml = isPayable
+						? `<div class="cima-ne-actions">
+							<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagado" : "Pagado"}</button>
+							${canCancel ? `<button type="button" class="btn btn-xs btn-danger" data-cancel-dn="${frappe.utils.escape_html(n.name)}">Cancelar</button>` : ""}
+						</div>`
+						: isAdmin
+						? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
+						: `<span class="text-muted small">Completada</span>`;
 
 					const fx = this.data?.config?.exchange_rate || {};
 					const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
@@ -546,22 +546,25 @@ class CimaNotasEntrega {
 					const file = fileInput && fileInput.files && fileInput.files[0];
 					if (file) {
 						try {
-							const formData = new FormData();
-							formData.append("file", file, file.name);
-							formData.append("doctype", "Delivery Note");
-							formData.append("docname", note.name);
-							formData.append("is_private", "1");
-							const resp = await fetch("/api/method/upload_file", {
-								method: "POST",
-								headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
-								body: formData,
+							const b64 = await new Promise((resolve, reject) => {
+								const reader = new FileReader();
+								reader.onload = () => resolve(String(reader.result || ""));
+								reader.onerror = () => reject(new Error("read_error"));
+								reader.readAsDataURL(file);
 							});
-							const json = await resp.json();
-							if (!resp.ok || !json.message || !json.message.file_url) {
+							const up = await frappe.call({
+								method: "cima_ve.api.delivery_notes.upload_delivery_note_payment_proof",
+								args: {
+									delivery_note: note.name,
+									file_name: file.name,
+									file_data_base64: b64,
+								},
+							});
+							if (!up || !up.message || !up.message.file_url) {
 								frappe.msgprint("No se pudo subir la captura de pantalla. Intenta nuevamente.");
 								return;
 							}
-							screenshotUrl = json.message.file_url;
+							screenshotUrl = up.message.file_url;
 						} catch (err) {
 							frappe.msgprint("Error al subir la captura de pantalla.");
 							return;
