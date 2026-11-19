@@ -49,7 +49,7 @@ To keep business logic fast to test locally without a running Frappe/MariaDB ben
   - Exchange Rates & Brecha: `bcv_rate`, `monitor_rate`, `binance_usdt_rate`, `brecha_source`, `brecha_factor_pct`, `manual_brecha_pct`, `applied_brecha_pct`, `adjusted_rate`, `sync_currency_exchange`.
 - **`cima_ve/cima_ve/page/`**:
   - `venta_rapida/` (`/app/venta-rapida`): Simplified seller POS for creating **Notas de Entrega** and checking inventory/prices.
-  - `notas_entrega/` (`/app/notas-entrega`): Nota de Entrega management (Admin sees all + `Pagado`/`Cancelar`/`Calcular Comisiones`; `Sales User` sees only their own in read-only mode).
+  - `notas_entrega/` (`/app/notas-entrega`): Nota de Entrega management (Admin sees all + `Pagar`/`Revertir`/`Calcular Comisiones`; `Sales User` sees only their own notes and can register payment on their own notes, but cannot revert or calculate commissions).
   - `metricas_ventas/` (`/app/metricas-ventas`): Sales KPIs and per-user breakdown (**System Manager only**).
   - `clientes_consumo/` (`/app/clientes-consumo`): Client consumption and per-seller breakdown (**System Manager only**).
 - **`cima_ve/www/tienda.html`, `tienda.py`, `cima_ve/public/js/tienda.js`, `css/tienda.css`, `images/pending-product.svg`**: Public Amazon-style storefront (`/tienda`).
@@ -85,15 +85,17 @@ The company uses **Notas de Entrega** (`Delivery Note` in ERPNext) instead of im
    - Stored in `ve_ne_comision_opcion`, `ve_ne_comision_pct`, `ve_ne_costo_total`, `ve_ne_margen_ganancia`, `ve_ne_comision_monto`.
    - Admin can run `calculate_seller_commissions` from `/app/notas-entrega` (**Calcular Comisiones**) to summarize paid vs. pending commissions per seller (excluding cancelled notes).
 
-4. **Settlement (`Pagado` → `cima_ve.api.delivery_notes.mark_delivery_note_paid`, System Manager only):**
+4. **Settlement (`Pagar` → `cima_ve.api.delivery_notes.mark_delivery_note_paid`; admins can pay any note and Sales Users can pay their own):**
    - Opens dialog showing USD + live Bs equivalents (`Saldo pendiente`, `Este pago`, `Saldo restante`), previous installments, and any `/tienda` reported payment proof.
    - **Partial Payments:** Supports paying a partial amount (`paid_amount`). On the first payment, creates & submits a `Sales Invoice` (applying selected IVA/IGTF taxes) and a `Payment Entry` for `paid_amount`. Subsequent payments reuse `ve_ne_factura` and submit additional `Payment Entry` records.
    - While `remaining_amount > 0.01`, `ve_ne_estado` becomes `"Pago Parcial"` and the note **stays visible** under the `Pendiente` filter. Once fully paid, `ve_ne_estado` becomes `"Pagada"`.
    - **Non-Cash Payment Proof:** Reference number and screenshot upload are required/shown for non-cash methods and automatically hidden for cash (`Efectivo` / `Cash`).
    - **Historical Bs Freeze (`compute_historical_bs_payment`):** Each installment saves `amount_bs` and `exchange_rate` in `ve_ne_historial_pagos` JSON. `ve_ne_tasa_cambio` and `ve_ne_monto_pagado_bs` are updated, and once `Pagada`, `ve_ne_monto_bs` is frozen so future FX rate changes **never** alter the historical Bs amount of a paid Nota de Entrega.
 
-5. **Cancellation (`Cancelar` → `cima_ve.api.delivery_notes.cancel_delivery_note`, System Manager only):**
-   - Cancels the `Delivery Note` (`docstatus = 2`, restoring stock), sets `ve_ne_estado = "Cancelada"`, and logs `ve_ne_fecha_resolucion` + `ve_ne_usuario_resolucion`.
+5. **Reversion (`Revertir` → `cima_ve.api.delivery_notes.revert_delivery_note`, System Manager only):**
+   - Cancels linked `Payment Entry` documents, then the `Sales Invoice`, then the `Delivery Note`. Cancelling the submitted Delivery Note restores inventory even when it was never paid.
+   - Keeps the Delivery Note and its payment history for audit, sets `docstatus = 2` and `ve_ne_estado = "Cancelada"`, and logs `ve_ne_fecha_resolucion`, `ve_ne_usuario_resolucion`, and `ve_ne_motivo_cancelacion`.
+   - A fiscal invoice with a control number must be handled with a credit note. Cancelling ERPNext payment records reverses the accounting entries; it does not initiate a bank transfer.
 
 6. **Notifications on Creation:**
    - Every Nota de Entrega (from `venta-rapida` or `/tienda`) triggers `notify_delivery_note_created`:
@@ -113,7 +115,7 @@ The company uses **Notas de Entrega** (`Delivery Note` in ERPNext) instead of im
 
 ### D. Role & Access Control Rules
 - **Non-admin (`Sales User`):**
-  - Can **only** access `/app/venta-rapida` (`Facturación Rápida` workspace) and **only their own** Notas de Entrega in `/app/notas-entrega` (read-only; no `Pagado`, `Cancelar`, `Calcular Comisiones`, or `Sales Invoice` links).
+  - Can **only** access `/app/venta-rapida` (`Facturación Rápida` workspace) and **only their own** Notas de Entrega in `/app/notas-entrega`; can register payments on their own notes but cannot `Revertir`, `Calcular Comisiones`, or access `Sales Invoice` links.
 - **Admin (`System Manager`):**
   - Full access to `/app/notas-entrega`, `/app/metricas-ventas`, `/app/clientes-consumo`, `Cima VE Settings`, and `Administración Cima` workspace.
   - All admin APIs enforce `frappe.only_for("System Manager")`.

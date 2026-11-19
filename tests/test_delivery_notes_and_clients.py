@@ -476,6 +476,16 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("<strong>Cancelada</strong>", ne_js)
         self.assertNotIn("data-cancel-dn", ne_js)
 
+    def test_cash_payment_allows_screenshot_proof(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        dn_py = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+
+        self.assertIn('d.$wrapper.find("#ne-screenshot-group").show();', ne_js)
+        self.assertNotIn('d.$wrapper.find("#ne-screenshot-group").toggle(!cash);', ne_js)
+        self.assertIn('clean_screenshot = (screenshot_url or "").strip()', dn_py)
+        self.assertNotIn('clean_screenshot = "" if is_cash else', dn_py)
+
 
 class DeliveryNotePermissionTests(unittest.TestCase):
     def test_hooks_and_module_restrict_delivery_notes(self) -> None:

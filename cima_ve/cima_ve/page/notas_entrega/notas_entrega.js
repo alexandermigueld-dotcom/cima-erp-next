@@ -527,8 +527,8 @@ class CimaNotasEntrega {
 					fieldname: "screenshot_box",
 					options: `
 						<div class="form-group" id="ne-screenshot-group">
-							<label class="control-label small">Captura de Pantalla / Comprobante</label>
-							<input type="file" id="ne-payment-screenshot" class="form-control input-sm" accept="image/*" />
+							<label class="control-label small">Foto / Captura de Pantalla / Comprobante</label>
+							<input type="file" id="ne-payment-screenshot" class="form-control input-sm" accept="image/*,.pdf" />
 							<div id="ne-screenshot-preview" class="small text-muted mt-1"></div>
 						</div>
 					`,
@@ -547,35 +547,33 @@ class CimaNotasEntrega {
 					return;
 				}
 				const isCash = isCashMethod(values.payment_method);
-				let screenshotUrl = !isCash ? (note.ve_ne_comprobante_url || "") : "";
-				if (!isCash) {
-					const fileInput = d.$wrapper.find("#ne-payment-screenshot")[0];
-					const file = fileInput && fileInput.files && fileInput.files[0];
-					if (file) {
-						try {
-							const b64 = await new Promise((resolve, reject) => {
-								const reader = new FileReader();
-								reader.onload = () => resolve(String(reader.result || ""));
-								reader.onerror = () => reject(new Error("read_error"));
-								reader.readAsDataURL(file);
-							});
-							const up = await frappe.call({
-								method: "cima_ve.api.delivery_notes.upload_delivery_note_payment_proof",
-								args: {
-									delivery_note: note.name,
-									file_name: file.name,
-									file_data_base64: b64,
-								},
-							});
-							if (!up || !up.message || !up.message.file_url) {
-								frappe.msgprint("No se pudo subir la captura de pantalla. Intenta nuevamente.");
-								return;
-							}
-							screenshotUrl = up.message.file_url;
-						} catch (err) {
-							frappe.msgprint("Error al subir la captura de pantalla.");
+				let screenshotUrl = note.ve_ne_comprobante_url || "";
+				const fileInput = d.$wrapper.find("#ne-payment-screenshot")[0];
+				const file = fileInput && fileInput.files && fileInput.files[0];
+				if (file) {
+					try {
+						const b64 = await new Promise((resolve, reject) => {
+							const reader = new FileReader();
+							reader.onload = () => resolve(String(reader.result || ""));
+							reader.onerror = () => reject(new Error("read_error"));
+							reader.readAsDataURL(file);
+						});
+						const up = await frappe.call({
+							method: "cima_ve.api.delivery_notes.upload_delivery_note_payment_proof",
+							args: {
+								delivery_note: note.name,
+								file_name: file.name,
+								file_data_base64: b64,
+							},
+						});
+						if (!up || !up.message || !up.message.file_url) {
+							frappe.msgprint("No se pudo subir la captura de pantalla. Intenta nuevamente.");
 							return;
 						}
+						screenshotUrl = up.message.file_url;
+					} catch (err) {
+						frappe.msgprint("Error al subir la captura de pantalla.");
+						return;
 					}
 				}
 				frappe.call({
@@ -617,7 +615,7 @@ class CimaNotasEntrega {
 			const method = d.get_value("payment_method");
 			const cash = isCashMethod(method);
 			d.set_df_property("reference", "hidden", cash ? 1 : 0);
-			d.$wrapper.find("#ne-screenshot-group").toggle(!cash);
+			d.$wrapper.find("#ne-screenshot-group").show();
 		};
 
 		let userEditedAmount = hasExistingInvoice;
