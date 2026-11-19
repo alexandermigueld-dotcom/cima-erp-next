@@ -106,6 +106,10 @@ def _save_public_item_image(item_code: str, file_name: str, file_data_base64: st
         frappe.db.set_value("Item", item_code, "website_image", file_doc.file_url)
     if item_meta.has_field("image"):
         frappe.db.set_value("Item", item_code, "image", file_doc.file_url)
+    if frappe.db.table_exists("Website Item"):
+        wi_name = frappe.db.get_value("Website Item", {"item_code": item_code}, "name")
+        if wi_name:
+            frappe.db.set_value("Website Item", wi_name, "website_image", file_doc.file_url)
     return file_doc.file_url
 
 
@@ -262,6 +266,23 @@ def search_products_for_batch(query: str = "", warehouse: str = "", limit: int =
     wh_filter = "AND b.warehouse = %(warehouse)s" if warehouse else ""
     where_clause = " AND ".join(conditions)
 
+    has_website_item = bool(frappe.db.table_exists("Website Item"))
+    item_meta = frappe.get_meta("Item")
+    has_item_website_image = bool(item_meta.has_field("website_image"))
+
+    if has_website_item:
+        website_item_join = "LEFT JOIN `tabWebsite Item` wi ON wi.item_code = i.item_code"
+        image_select = "COALESCE(NULLIF(MAX(wi.website_image), ''), NULLIF(i.image, ''), '') AS website_image"
+        extra_group_by = ""
+    elif has_item_website_image:
+        website_item_join = ""
+        image_select = "COALESCE(NULLIF(i.website_image, ''), NULLIF(i.image, ''), '') AS website_image"
+        extra_group_by = ", i.website_image"
+    else:
+        website_item_join = ""
+        image_select = "COALESCE(NULLIF(i.image, ''), '') AS website_image"
+        extra_group_by = ""
+
     rows = frappe.db.sql(
         f"""
         SELECT
@@ -272,12 +293,13 @@ def search_products_for_batch(query: str = "", warehouse: str = "", limit: int =
             COALESCE(i.valuation_rate, 0) AS valuation_rate,
             COALESCE(i.last_purchase_rate, 0) AS last_purchase_rate,
             COALESCE(i.standard_rate, 0) AS standard_rate,
-            COALESCE(i.website_image, i.image, '') AS website_image,
+            {image_select},
             COALESCE(i.has_batch_no, 0) AS has_batch_no,
             COALESCE(SUM(b.actual_qty), 0) AS stock_qty,
             COALESCE(MAX(ip_detal.price_list_rate), i.standard_rate, 0) AS detal_price,
             COALESCE(MAX(ip_mayor.price_list_rate), 0) AS mayor_price
         FROM `tabItem` i
+        {website_item_join}
         LEFT JOIN `tabBin` b
             ON b.item_code = i.item_code {wh_filter}
         LEFT JOIN `tabItem Price` ip_detal
@@ -288,7 +310,7 @@ def search_products_for_batch(query: str = "", warehouse: str = "", limit: int =
         GROUP BY
             i.item_code, i.item_name, i.item_group, i.stock_uom,
             i.valuation_rate, i.last_purchase_rate, i.standard_rate,
-            i.website_image, i.image, i.has_batch_no
+            i.image, i.has_batch_no{extra_group_by}
         ORDER BY i.modified DESC
         LIMIT %(limit)s
         """,
@@ -298,7 +320,34 @@ def search_products_for_batch(query: str = "", warehouse: str = "", limit: int =
     return rows
 
 
-@whitelist()
+def _validate_product_creation(payload: dict) -> dict:
+    import frappe
+
+    try:
+        cleaned = validate_new_product_input(payload)
+    except ValueError as exc:
+        frappe.throw(str(exc))
+    if frappe.db.exists("Item", cleaned["item_code"]):
+        frappe.throw(
+            f"El producto con código {cleaned['item_code']} ya existe. Usa la pestaña 'Agregar Lote' para sumarle inventario."
+        )
+    return cleaned
+
+
+@whitelist(methods=["POST"])
+def preview_quick_product(product: str) -> dict:
+    """Devuelve los valores normalizados para revisión sin crear registros."""
+    import frappe
+
+    _require_product_manager()
+    try:
+        payload = json.loads(product)
+    except (TypeError, ValueError):
+        frappe.throw("Datos de producto inválidos.")
+    return _validate_product_creation(payload)
+
+
+@whitelist(methods=["POST"])
 def create_quick_product(
     item_name: str,
     item_code: str = "",
@@ -319,29 +368,19 @@ def create_quick_product(
 
     _require_product_manager()
 
-    try:
-        cleaned = validate_new_product_input(
-            {
-                "item_code": item_code,
-                "item_name": item_name,
-                "item_group": item_group,
-                "stock_uom": stock_uom,
-                "cost_rate": cost_rate,
-                "detal_price": detal_price,
-                "mayor_price": mayor_price,
-                "initial_qty": initial_qty,
-                "warehouse": warehouse,
-                "description": description,
-                "show_in_website": show_in_website,
-            }
-        )
-    except ValueError as exc:
-        frappe.throw(str(exc))
-
-    if frappe.db.exists("Item", cleaned["item_code"]):
-        frappe.throw(
-            f"El producto con código {cleaned['item_code']} ya existe. Usa la pestaña 'Agregar Lote' para sumarle inventario."
-        )
+    cleaned = _validate_product_creation({
+        "item_code": item_code,
+        "item_name": item_name,
+        "item_group": item_group,
+        "stock_uom": stock_uom,
+        "cost_rate": cost_rate,
+        "detal_price": detal_price,
+        "mayor_price": mayor_price,
+        "initial_qty": initial_qty,
+        "warehouse": warehouse,
+        "description": description,
+        "show_in_website": show_in_website,
+    })
 
     item_dict: dict = {
         "doctype": "Item",

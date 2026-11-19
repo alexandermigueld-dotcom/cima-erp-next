@@ -123,6 +123,55 @@ class ProductLoaderWiringAndPermissionTests(unittest.TestCase):
         self.assertIn("open-product-loader", vr_js)
         self.assertIn('frappe.set_route("carga-productos")', vr_js)
 
+    def test_search_products_for_batch_avoids_missing_item_website_image_column(self) -> None:
+        from cima_ve.api import products as products_api
+
+        captured_queries: list[str] = []
+
+        class FakeMeta:
+            def has_field(self, fieldname: str) -> bool:
+                return fieldname != "website_image"
+
+        class FakeDB:
+            @staticmethod
+            def table_exists(doctype: str) -> bool:
+                return doctype == "Website Item"
+
+            @staticmethod
+            def sql(query: str, params: dict, as_dict: bool = True) -> list[dict]:
+                captured_queries.append(query)
+                return [{"item_code": "SKU-1", "item_name": "Test", "website_image": "/files/a.png"}]
+
+        class FakeFrappe:
+            PermissionError = Exception
+            db = FakeDB()
+
+            class session:
+                user = "admin@cima.com"
+
+            @staticmethod
+            def only_for(roles):
+                return None
+
+            @staticmethod
+            def get_all(*args, **kwargs):
+                return ["Detal USD", "Mayor"]
+
+            @staticmethod
+            def get_meta(doctype: str):
+                return FakeMeta()
+
+        sys.modules["frappe"] = FakeFrappe
+        try:
+            rows = products_api.search_products_for_batch(query="Test", warehouse="WH-1")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(len(captured_queries), 1)
+            self.assertNotRegex(captured_queries[0], r"\bi\.website_image\b")
+            self.assertIn("LEFT JOIN `tabWebsite Item` wi", captured_queries[0])
+            self.assertIn("MAX(wi.website_image)", captured_queries[0])
+        finally:
+            del sys.modules["frappe"]
+
 
 if __name__ == "__main__":
     unittest.main()
