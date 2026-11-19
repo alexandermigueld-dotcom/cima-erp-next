@@ -875,6 +875,8 @@ def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
     reverted_payment_entries: list[str] = []
     reverted_invoice = ""
     si_name = (getattr(dn, "ve_ne_factura", "") or "").strip()
+    si = None
+    pe_names: list[str] = []
 
     if si_name:
         si = frappe.get_doc("Sales Invoice", si_name)
@@ -884,43 +886,38 @@ def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
                 f"La factura {si.name} tiene número de control fiscal ({fiscal_ctrl}). Emite una Nota de Crédito en lugar de revertir."
             )
 
-        pe_names: list[str] = []
-        try:
-            linked_pes = frappe.get_all(
-                "Payment Entry Reference",
-                filters={
-                    "reference_doctype": "Sales Invoice",
-                    "reference_name": si.name,
-                    "docstatus": 1,
-                },
-                pluck="parent",
-            )
-            pe_names.extend([p for p in (linked_pes or []) if p])
-        except Exception:
-            pass
+        linked_pes = frappe.get_all(
+            "Payment Entry Reference",
+            filters={
+                "reference_doctype": "Sales Invoice",
+                "reference_name": si.name,
+            },
+            pluck="parent",
+            limit_page_length=0,
+        )
+        pe_names.extend([p for p in (linked_pes or []) if p])
 
-        hist_raw = getattr(dn, "ve_ne_historial_pagos", "") if dn.meta.has_field("ve_ne_historial_pagos") else ""
-        for entry in parse_payment_history(hist_raw):
-            pe_id = (entry.get("payment_entry") or "").strip()
-            if pe_id:
-                pe_names.append(pe_id)
+    hist_raw = getattr(dn, "ve_ne_historial_pagos", "") if dn.meta.has_field("ve_ne_historial_pagos") else ""
+    for entry in parse_payment_history(hist_raw):
+        pe_id = (entry.get("payment_entry") or "").strip()
+        if pe_id:
+            pe_names.append(pe_id)
 
-        seen_pes: set[str] = set()
-        for pe_name in pe_names:
-            if pe_name in seen_pes:
-                continue
-            seen_pes.add(pe_name)
-            pe = frappe.get_doc("Payment Entry", pe_name)
-            if pe.docstatus == 1:
-                pe.flags.ignore_permissions = True
-                pe.cancel()
-                reverted_payment_entries.append(pe.name)
+    seen_pes: set[str] = set()
+    for pe_name in pe_names:
+        if pe_name in seen_pes:
+            continue
+        seen_pes.add(pe_name)
+        pe = frappe.get_doc("Payment Entry", pe_name)
+        if pe.docstatus == 1:
+            pe.flags.ignore_permissions = True
+            pe.cancel()
+            reverted_payment_entries.append(pe.name)
 
-        si = frappe.get_doc("Sales Invoice", si_name)
-        if si.docstatus == 1:
-            si.flags.ignore_permissions = True
-            si.cancel()
-            reverted_invoice = si.name
+    if si and si.docstatus == 1:
+        si.flags.ignore_permissions = True
+        si.cancel()
+        reverted_invoice = si.name
 
     dn = frappe.get_doc("Delivery Note", delivery_note)
     dn.flags.ignore_permissions = True
@@ -956,6 +953,71 @@ def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
         "reverted_payment_entries": reverted_payment_entries,
         "fecha_resolucion": resolved_at,
         "usuario_resolucion": resolved_by,
+    }
+
+
+@whitelist()
+def purge_cancelled_delivery_notes() -> dict:
+    """Elimina permanentemente Notas de Entrega ya canceladas (docstatus=2) y sus facturas/pagos cancelados vinculados."""
+    import frappe
+    from cima_ve.services.delivery_note_service import parse_payment_history
+
+    frappe.only_for("System Manager")
+
+    cancelled_dns = frappe.get_all(
+        "Delivery Note",
+        filters={"docstatus": 2},
+        fields=["name", "ve_ne_factura", "ve_ne_historial_pagos"],
+        limit_page_length=500,
+    )
+
+    deleted_pes: list[str] = []
+    deleted_invoices: list[str] = []
+    deleted_dns: list[str] = []
+    errors: list[dict] = []
+
+    seen_pes: set[str] = set()
+    seen_invoices: set[str] = set()
+
+    for row in cancelled_dns or []:
+        hist_raw = row.get("ve_ne_historial_pagos") or ""
+        for entry in parse_payment_history(hist_raw):
+            pe_name = (entry.get("payment_entry") or "").strip()
+            if pe_name and pe_name not in seen_pes:
+                seen_pes.add(pe_name)
+                try:
+                    pe = frappe.get_doc("Payment Entry", pe_name)
+                    if pe.docstatus == 2:
+                        frappe.delete_doc("Payment Entry", pe_name, force=True, ignore_permissions=True)
+                        deleted_pes.append(pe_name)
+                except Exception as exc:
+                    errors.append({"doctype": "Payment Entry", "name": pe_name, "error": str(exc)})
+
+        si_name = (row.get("ve_ne_factura") or "").strip()
+        if si_name and si_name not in seen_invoices:
+            seen_invoices.add(si_name)
+            try:
+                si = frappe.get_doc("Sales Invoice", si_name)
+                if si.docstatus == 2:
+                    frappe.delete_doc("Sales Invoice", si_name, force=True, ignore_permissions=True)
+                    deleted_invoices.append(si_name)
+            except Exception as exc:
+                errors.append({"doctype": "Sales Invoice", "name": si_name, "error": str(exc)})
+
+    for row in cancelled_dns or []:
+        dn_name = row["name"]
+        try:
+            frappe.delete_doc("Delivery Note", dn_name, force=True, ignore_permissions=True)
+            deleted_dns.append(dn_name)
+        except Exception as exc:
+            errors.append({"doctype": "Delivery Note", "name": dn_name, "error": str(exc)})
+
+    return {
+        "ok": len(errors) == 0,
+        "deleted_delivery_notes": deleted_dns,
+        "deleted_invoices": deleted_invoices,
+        "deleted_payment_entries": deleted_pes,
+        "errors": errors,
     }
 
 
@@ -1186,24 +1248,21 @@ def _mark_delivery_note_paid_impl(
 
     pay_amt = payment_state["payment_amount"]
     payment_entry_name = ""
-    try:
-        from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+    from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
-        pe = get_payment_entry("Sales Invoice", si.name)
-        if frappe.db.exists("Mode of Payment", clean_method):
-            pe.mode_of_payment = clean_method
-        pe.paid_amount = pay_amt
-        pe.received_amount = pay_amt
-        if getattr(pe, "references", None):
-            pe.references[0].allocated_amount = pay_amt
-        pe.reference_no = (clean_reference or dn.name)[:140]
-        pe.reference_date = today()
-        pe.remarks = f"Pago Nota de Entrega {dn.name} ({clean_method}) — ${pay_amt:.2f}"
-        pe.insert(ignore_permissions=True)
-        pe.submit()
-        payment_entry_name = pe.name
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {dn.name}")
+    pe = get_payment_entry("Sales Invoice", si.name)
+    if frappe.db.exists("Mode of Payment", clean_method):
+        pe.mode_of_payment = clean_method
+    pe.paid_amount = pay_amt
+    pe.received_amount = pay_amt
+    if getattr(pe, "references", None):
+        pe.references[0].allocated_amount = pay_amt
+    pe.reference_no = (clean_reference or dn.name)[:140]
+    pe.reference_date = today()
+    pe.remarks = f"Pago Nota de Entrega {dn.name} ({clean_method}) — ${pay_amt:.2f}"
+    pe.insert(ignore_permissions=True)
+    pe.submit()
+    payment_entry_name = pe.name
 
     resolved_at = str(now_datetime())
     new_estado = payment_state["estado"]

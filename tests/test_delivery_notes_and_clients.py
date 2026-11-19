@@ -472,6 +472,8 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("data-revert-dn", ne_js)
         self.assertIn("revert_delivery_note", ne_js)
         self.assertIn('"Pagar"', ne_js)
+        self.assertIn("Registro Pago / Reversión", ne_js)
+        self.assertIn("<strong>Cancelada</strong>", ne_js)
         self.assertNotIn("data-cancel-dn", ne_js)
 
 

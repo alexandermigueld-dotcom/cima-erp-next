@@ -88,7 +88,7 @@ class CimaNotasEntrega {
 									<th class="text-right">Monto Base</th>
 									<th>Comisión Vendedor</th>
 									<th>Estado</th>
-									<th>Registro Pago / Cancelación</th>
+									<th>Registro Pago / Reversión</th>
 									<th>Acciones</th>
 								</tr>
 							</thead>
@@ -279,6 +279,7 @@ class CimaNotasEntrega {
 							: "cima-ne-badge-pendiente";
 
 					const history = Array.isArray(n.payment_history) ? n.payment_history : [];
+					const historicalPaymentsTotal = history.reduce((total, payment) => total + Number(payment.amount || 0), 0);
 					const historyHtml = history.length
 						? `<div class="mt-1 pt-1" style="border-top:1px dashed #cbd5e1;">` +
 						  history
@@ -333,9 +334,13 @@ class CimaNotasEntrega {
 					} else if (n.ve_ne_estado === "Cancelada") {
 						resolutionHtml = `
 							<div class="small text-danger">
-								<strong>Anulada</strong> (${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")})<br>
+								<strong>Cancelada</strong> (${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")})<br>
 								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
 								${n.ve_ne_motivo_cancelacion ? `<br><span class="text-muted">${frappe.utils.escape_html(n.ve_ne_motivo_cancelacion)}</span>` : ""}
+								${n.ve_ne_factura && isAdmin ? `<br>Factura revertida: <a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
+								${historicalPaymentsTotal > 0 ? `<br>Pagos revertidos: <strong>$${historicalPaymentsTotal.toFixed(2)}</strong>` : ""}
+								${reportedProofHtml}
+								${historyHtml}
 							</div>
 						`;
 					}
@@ -683,6 +688,8 @@ class CimaNotasEntrega {
 
 	openRevertDialog(note) {
 		const hasPayments = Boolean(note.ve_ne_factura) || Number(note.paid_amount || 0) > 0;
+		const accountingNote =
+			"La reversión cancela los movimientos contables en ERPNext; no ejecuta una transferencia bancaria de reembolso.";
 		const detailsMsg = hasPayments
 			? `Al revertir <strong>${frappe.utils.escape_html(note.name)}</strong>, se devolverán los productos al inventario y se anularán automáticamente la factura (<strong>${frappe.utils.escape_html(note.ve_ne_factura || "asociada")}</strong>) y los pagos registrados. El registro se conservará en el historial como <strong>Cancelada</strong>.`
 			: `Al revertir <strong>${frappe.utils.escape_html(note.name)}</strong>, todos los productos serán devueltos al inventario automáticamente y el registro se conservará en el historial como <strong>Cancelada</strong>.`;
@@ -692,7 +699,7 @@ class CimaNotasEntrega {
 				{
 					fieldtype: "HTML",
 					fieldname: "warn",
-					options: `<p>${detailsMsg}</p>`,
+					options: `<p>${detailsMsg}</p><p class="text-muted small">${accountingNote}</p>`,
 				},
 				{
 					label: "Motivo de Reversión (Opcional)",
