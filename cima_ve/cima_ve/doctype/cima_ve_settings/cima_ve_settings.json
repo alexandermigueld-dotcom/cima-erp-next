@@ -57,6 +57,7 @@
   "assistant_enabled",
   "assistant_provider",
   "assistant_model",
+  "assistant_fallback_model",
   "assistant_include_repository",
   "assistant_openai_api_key",
   "assistant_anthropic_api_key",
@@ -379,6 +380,12 @@
    "label": "Modelo de IA"
   },
   {
+   "description": "Opcional. Modelo de respaldo del mismo proveedor; solo se intenta si el principal está temporalmente saturado.",
+   "fieldname": "assistant_fallback_model",
+   "fieldtype": "Data",
+   "label": "Modelo alternativo (opcional)"
+  },
+  {
    "default": "1",
    "description": "Incluye documentación pública seleccionada (README.md, CONTEXT.md y AGENTS.md) del repositorio CIMA.",
    "fieldname": "assistant_include_repository",
@@ -403,7 +410,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-19 18:20:00.000000",
+ "modified": "2026-11-19 19:14:00.000000",
  "modified_by": "Administrator",
  "module": "Cima VE",
  "name": "Cima VE Settings",

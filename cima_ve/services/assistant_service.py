@@ -6,10 +6,13 @@ import io
 import json
 import posixpath
 import re
+import time
 import unicodedata
 import urllib.error
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable
 from urllib.parse import urlparse
 from xml.etree import ElementTree
@@ -18,6 +21,7 @@ MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_IMPORT_ROWS = 250
 MAX_WORKBOOK_UNCOMPRESSED_BYTES = 12 * 1024 * 1024
 MAX_REPOSITORY_FILE_CHARS = 6000
+MAX_RETRY_AFTER_SECONDS = 5
 
 DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
@@ -375,30 +379,77 @@ def extract_provider_text(provider: str, response: dict) -> str:
     return cleaned[:12000]
 
 
+class AIProviderOverloadedError(ValueError):
+    """The configured provider is temporarily unavailable due to demand."""
+
+
+def _retry_after_seconds(headers) -> float | None:
+    value = headers.get("Retry-After") if headers else None
+    if not value:
+        return 1.0
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return 1.0
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    if not 0 <= delay <= MAX_RETRY_AFTER_SECONDS:
+        return None
+    return delay
+
+
 def call_ai_provider(provider: str, model: str, api_key: str, system_prompt: str, messages: list[dict]) -> str:
     url, headers, payload = build_provider_request(provider, model, api_key, system_prompt, messages)
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            raw = response.read(1024 * 1024 + 1)
-        if len(raw) > 1024 * 1024:
-            raise ValueError("La respuesta del proveedor excede el tamaño permitido.")
-        parsed = json.loads(raw.decode("utf-8"))
-        if not isinstance(parsed, dict):
-            raise ValueError("El proveedor devolvió una respuesta inválida.")
-    except urllib.error.HTTPError as exc:
-        details = exc.read(1000).decode("utf-8", errors="replace")
-        raise ValueError(f"El proveedor de IA respondió HTTP {exc.code}: {details[:500]}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise ValueError("No se pudo conectar con el proveedor de IA.") from exc
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("El proveedor devolvió una respuesta inválida.") from exc
-    return extract_provider_text(provider, parsed)
+    request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    for attempt in range(2):
+        request = urllib.request.Request(url, data=request_body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                raw = response.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                raise ValueError("La respuesta del proveedor excede el tamaño permitido.")
+            parsed = json.loads(raw.decode("utf-8"))
+            if not isinstance(parsed, dict):
+                raise ValueError("El proveedor devolvió una respuesta inválida.")
+            return extract_provider_text(provider, parsed)
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            delay = _retry_after_seconds(exc.headers) if status == 503 and attempt == 0 else None
+            exc.close()
+            if status == 503:
+                if attempt == 0:
+                    if delay is not None:
+                        if delay:
+                            time.sleep(delay)
+                        continue
+                raise AIProviderOverloadedError(
+                    "El proveedor de IA está temporalmente saturado (HTTP 503). "
+                    "Espera unos minutos y vuelve a intentarlo."
+                ) from exc
+            if status == 429:
+                raise ValueError(
+                    "El proveedor aplicó un límite de solicitudes o cuota (HTTP 429). "
+                    "Revisa la cuota y facturación del proveedor antes de intentar nuevamente."
+                ) from exc
+            if status in (401, 403):
+                raise ValueError(
+                    f"El proveedor rechazó la autenticación (HTTP {status}). Revisa la clave API y sus permisos."
+                ) from exc
+            if status == 400:
+                raise ValueError("El proveedor rechazó la solicitud (HTTP 400). Revisa el modelo configurado.") from exc
+            raise ValueError(
+                f"El proveedor de IA respondió HTTP {status}. Intenta nuevamente más tarde."
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise ValueError("No se pudo conectar con el proveedor de IA.") from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("El proveedor devolvió una respuesta inválida.") from exc
+
+    raise AIProviderOverloadedError("El proveedor de IA está temporalmente saturado (HTTP 503). Vuelve a intentarlo.")
 
 
 def fetch_public_repository_context(fetcher: Callable[[str], str] | None = None) -> str:

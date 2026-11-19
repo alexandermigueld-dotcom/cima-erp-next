@@ -6,6 +6,7 @@ from datetime import date
 
 from cima_ve.api._compat import whitelist
 from cima_ve.services.assistant_service import (
+    AIProviderOverloadedError,
     DEFAULT_MODELS,
     call_ai_provider,
     fetch_public_repository_context,
@@ -46,6 +47,29 @@ def _get_provider_config() -> tuple[object, str, str, str]:
             key = ""
     model = str(settings.get("assistant_model") or DEFAULT_MODELS[provider]).strip()
     return settings, provider, model, key
+
+
+def _call_provider_with_fallback(
+    provider: str,
+    model: str,
+    api_key: str,
+    system_prompt: str,
+    messages: list[dict],
+    fallback_model: str = "",
+) -> tuple[str, str]:
+    try:
+        return call_ai_provider(provider, model, api_key, system_prompt, messages), model
+    except AIProviderOverloadedError:
+        fallback_model = str(fallback_model or "").strip()
+        if not fallback_model or fallback_model == model:
+            raise
+    try:
+        return call_ai_provider(provider, fallback_model, api_key, system_prompt, messages), fallback_model
+    except AIProviderOverloadedError as exc:
+        raise AIProviderOverloadedError(
+            "El modelo principal y el alternativo están temporalmente saturados. "
+            "Espera unos minutos o configura otro modelo del mismo proveedor."
+        ) from exc
 
 
 def _validate_dates(from_date: str, to_date: str) -> tuple[str, str]:
@@ -398,11 +422,12 @@ def ask_assistant(
     include_repository = bool(int(settings.get("assistant_include_repository") if settings.get("assistant_include_repository") is not None else 1))
     repository_context = fetch_public_repository_context() if include_repository else ""
     system_prompt = _assistant_system_prompt(context, repository_context)
+    fallback_model = str(settings.get("assistant_fallback_model") or "").strip()
     try:
-        answer = call_ai_provider(provider, model, key, system_prompt, messages)
+        answer, used_model = _call_provider_with_fallback(provider, model, key, system_prompt, messages, fallback_model)
     except ValueError as exc:
         frappe.throw(str(exc))
-    return {**parse_assistant_response(answer), "scope": context["scope"]}
+    return {**parse_assistant_response(answer), "scope": context["scope"], "model": used_model}
 
 
 @whitelist()

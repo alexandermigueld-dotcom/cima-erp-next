@@ -5,9 +5,10 @@ import io
 import json
 import pathlib
 import sys
+import urllib.error
 import unittest
 import zipfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from cima_ve.services.assistant_service import (
     build_provider_request,
@@ -19,6 +20,137 @@ from cima_ve.services.assistant_service import (
 
 
 class AssistantServiceTests(unittest.TestCase):
+    def test_provider_retries_overload_once_and_honors_short_retry_after(self) -> None:
+        from cima_ve.services.assistant_service import call_ai_provider
+
+        overloaded = urllib.error.HTTPError(
+            "https://api.openai.com/v1/chat/completions", 503, "Unavailable", {"Retry-After": "1"},
+            io.BytesIO(b"private provider diagnostics"),
+        )
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b'{"choices":[{"message":{"content":"Recovered"}}]}'
+        with (
+            patch("cima_ve.services.assistant_service.urllib.request.urlopen", side_effect=[overloaded, response]) as urlopen,
+            patch("cima_ve.services.assistant_service.time.sleep") as sleep,
+        ):
+            result = call_ai_provider("openai", "test-model", "key", "system", [{"role": "user", "content": "Hi"}])
+
+        self.assertEqual(result, "Recovered")
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(1.0)
+
+    def test_provider_reports_exhausted_overload_without_raw_body(self) -> None:
+        from cima_ve.services.assistant_service import AIProviderOverloadedError, call_ai_provider
+
+        errors = [
+            urllib.error.HTTPError(
+                "https://api.openai.com/v1/chat/completions", 503, "Unavailable", {"Retry-After": "0"},
+                io.BytesIO(b"private provider diagnostics"),
+            )
+            for _ in range(2)
+        ]
+        with (
+            patch("cima_ve.services.assistant_service.urllib.request.urlopen", side_effect=errors) as urlopen,
+            patch("cima_ve.services.assistant_service.time.sleep") as sleep,
+        ):
+            with self.assertRaises(AIProviderOverloadedError) as raised:
+                call_ai_provider("openai", "test-model", "key", "system", [{"role": "user", "content": "Hi"}])
+
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertNotIn("private provider diagnostics", str(raised.exception))
+        self.assertIn("saturado", str(raised.exception))
+        sleep.assert_not_called()
+
+    def test_provider_does_not_exceed_a_long_retry_after_window(self) -> None:
+        from cima_ve.services.assistant_service import AIProviderOverloadedError, call_ai_provider
+
+        error = urllib.error.HTTPError(
+            "https://api.openai.com/v1/chat/completions", 503, "Unavailable", {"Retry-After": "60"},
+            io.BytesIO(b"private provider diagnostics"),
+        )
+        with (
+            patch("cima_ve.services.assistant_service.urllib.request.urlopen", side_effect=error) as urlopen,
+            patch("cima_ve.services.assistant_service.time.sleep") as sleep,
+        ):
+            with self.assertRaises(AIProviderOverloadedError):
+                call_ai_provider("openai", "test-model", "key", "system", [{"role": "user", "content": "Hi"}])
+
+        urlopen.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_provider_does_not_retry_quota_errors_or_expose_raw_body(self) -> None:
+        from cima_ve.services.assistant_service import call_ai_provider
+
+        error = urllib.error.HTTPError(
+            "https://api.openai.com/v1/chat/completions", 429, "Too Many Requests", {},
+            io.BytesIO(b"private quota diagnostics"),
+        )
+        with (
+            patch("cima_ve.services.assistant_service.urllib.request.urlopen", side_effect=error) as urlopen,
+            patch("cima_ve.services.assistant_service.time.sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(ValueError, "cuota") as raised:
+                call_ai_provider("openai", "test-model", "key", "system", [{"role": "user", "content": "Hi"}])
+
+        urlopen.assert_called_once()
+        self.assertNotIn("private quota diagnostics", str(raised.exception))
+        sleep.assert_not_called()
+
+    def test_chat_uses_same_provider_fallback_only_for_overload(self) -> None:
+        from cima_ve.api.ai_assistant import _call_provider_with_fallback
+        from cima_ve.services.assistant_service import AIProviderOverloadedError
+
+        with patch("cima_ve.api.ai_assistant.call_ai_provider", side_effect=[AIProviderOverloadedError("busy"), "Backup response"]) as call:
+            self.assertEqual(
+                _call_provider_with_fallback("openai", "primary", "key", "system", [], "backup"),
+                ("Backup response", "backup"),
+            )
+        self.assertEqual([entry.args[1] for entry in call.call_args_list], ["primary", "backup"])
+
+        with patch("cima_ve.api.ai_assistant.call_ai_provider", side_effect=ValueError("invalid key")) as call:
+            with self.assertRaisesRegex(ValueError, "invalid key"):
+                _call_provider_with_fallback("openai", "primary", "key", "system", [], "backup")
+        call.assert_called_once()
+
+    def test_connection_probe_checks_the_primary_model_not_its_fallback(self) -> None:
+        from cima_ve.api import ai_assistant
+
+        class FakeSettings:
+            values = {
+                "assistant_provider": "OpenAI",
+                "assistant_openai_api_key": "stored-key",
+                "assistant_model": "primary-model",
+                "assistant_fallback_model": "backup-model",
+            }
+
+            def get(self, field):
+                return self.values.get(field)
+
+            def get_password(self, field):
+                return "api-key"
+
+        class FakeFrappe:
+            class session:
+                user = "admin@example.test"
+
+            @staticmethod
+            def only_for(role):
+                assert role == "System Manager"
+
+            @staticmethod
+            def get_single(doctype):
+                assert doctype == "Cima VE Settings"
+                return FakeSettings()
+
+        with patch.dict(sys.modules, {"frappe": FakeFrappe}):
+            with patch.object(ai_assistant, "call_ai_provider", return_value="Conexión correcta") as call:
+                result = ai_assistant.test_assistant_connection()
+
+        self.assertEqual(result["model"], "primary-model")
+        self.assertEqual(call.call_args.args[1], "primary-model")
+        call.assert_called_once()
+
     def test_only_structured_product_proposals_supply_safe_prefill_fields(self) -> None:
         from cima_ve.services.assistant_service import parse_assistant_response
 
@@ -260,6 +392,7 @@ class AssistantPermissionAndWiringTests(unittest.TestCase):
         self.assertEqual(fields["assistant_openai_api_key"]["fieldtype"], "Password")
         self.assertEqual(fields["assistant_anthropic_api_key"]["fieldtype"], "Password")
         self.assertEqual(fields["assistant_gemini_api_key"]["fieldtype"], "Password")
+        self.assertIn("mismo proveedor", fields["assistant_fallback_model"]["description"])
         self.assertEqual(fields["assistant_enabled"]["default"], "0")
 
         workspace = json.loads((root / "cima_ve" / "fixtures" / "workspace.json").read_text(encoding="utf-8"))

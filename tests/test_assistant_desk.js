@@ -79,11 +79,78 @@ test("reporting calls only the chat endpoint and does not open a confirmation", 
 	assistant.state = { bootstrap: { enabled: true, configured: true }, messages: [] };
 	assistant.wrapper = { find: (selector) => ({ val: () => selector === "#cima-ai-question" ? "Resume el inventario" : "", prop() {} }) };
 	const messages = [];
-	assistant.addMessage = (...args) => messages.push(args);
+	assistant.addMessage = (...args) => {
+		messages.push(args);
+		const message = { role: args[0], content: args[1], includeInHistory: args[3]?.includeInHistory !== false };
+		assistant.state.messages.push(message);
+		return message;
+	};
 	assistant.sendMessage();
 	requests[0].callback({ message: { answer: "Informe", scope: {} } });
 	assert.equal(requests.length, 1);
 	assert.equal(requests[0].method, "cima_ve.api.ai_assistant.ask_assistant");
 	assert.match(messages[1][1], /^Informe/);
 	assert.equal(dialogs.length, 0);
+});
+
+test("chat shows pending state and keeps failed turns out of history until retry succeeds", () => {
+	const { requests, assistant } = setup();
+	const values = { "#cima-ai-question": "Resume inventario" };
+	const properties = {};
+	const element = (selector) => ({
+		0: { scrollHeight: 40 },
+		val(value) {
+			if (arguments.length) values[selector] = value;
+			return values[selector] || "";
+		},
+		prop(name, value) { properties[`${selector}:${name}`] = value; return this; },
+		html() { return this; },
+		scrollTop() { return this; },
+	});
+	assistant.wrapper = { find: element };
+	assistant.state = { bootstrap: { enabled: true, configured: true }, messages: [], asking: false, retryRequest: null };
+	assistant.sendMessage();
+	assert.equal(assistant.state.asking, true);
+	assert.equal(properties["#cima-ai-pending:hidden"], false);
+	assert.equal(JSON.parse(requests[0].args.history).length, 0);
+
+	requests[0].error({ message: "El proveedor está temporalmente saturado." });
+	requests[0].always();
+	assert.equal(assistant.state.asking, false);
+	assert.equal(properties["#cima-ai-pending:hidden"], true);
+	assert.equal(assistant.state.messages.every((message) => message.includeInHistory === false), true);
+
+	assistant.retryLastQuestion();
+	assert.equal(requests.length, 2);
+	assert.equal(JSON.parse(requests[1].args.history).length, 0);
+	requests[1].callback({ message: { answer: "Inventario estable", scope: {} } });
+	requests[1].always();
+	assert.equal(assistant.state.messages.find((message) => message.role === "user").includeInHistory, true);
+	assert.equal(assistant.state.messages.filter((message) => message.error).every((message) => !message.includeInHistory), true);
+});
+
+test("dropping a spreadsheet starts preview only and never confirms an import", () => {
+	const { requests, assistant } = setup();
+	const handlers = {};
+	const file = { name: "products.xlsx", size: 128 };
+	const previewed = [];
+	assistant.state = { importFile: null, importPreview: { token: "old-preview" }, previewing: false };
+	assistant.wrapper = {
+		on(event, selector, handler) {
+			if (typeof selector === "string" && typeof handler === "function") handlers[`${event}:${selector}`] = handler;
+		},
+		find() { return { removeClass() {}, empty() { return this; }, text() { return this; } }; },
+	};
+	assistant.previewImport = (selectedFile) => previewed.push(selectedFile);
+	assistant.bindEvents();
+	let prevented = false;
+	handlers["drop:#cima-ai-dropzone"]({
+		preventDefault() { prevented = true; },
+		originalEvent: { dataTransfer: { files: [file] } },
+	});
+	assert.equal(prevented, true);
+	assert.deepEqual(previewed, [file]);
+	assert.equal(assistant.state.importFile, file);
+	assert.equal(assistant.state.importPreview, null);
+	assert.equal(requests.length, 0);
 });

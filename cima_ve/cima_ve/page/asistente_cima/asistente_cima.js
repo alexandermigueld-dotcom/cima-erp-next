@@ -16,8 +16,10 @@ class CimaAssistant {
 			bootstrap: {},
 			messages: [],
 			importPreview: null,
+			importFile: null,
 			previewing: false,
 			asking: false,
+			retryRequest: null,
 		};
 		this.renderShell();
 		this.bindEvents();
@@ -43,16 +45,19 @@ class CimaAssistant {
 			</div>
 			<div id="cima-ai-config-alert"></div>
 			<div class="cima-ai-layout">
-				<section class="cima-ai-card">
+				<section class="cima-ai-card cima-ai-chat-card">
 					<h3>Consulta al asistente</h3>
 					<div class="text-muted small">Tu pregunta y los resúmenes seleccionados se envían al proveedor IA configurado. Se separan facturas por fecha de emisión, cobros por fecha de pago y Notas de Entrega por fecha de despacho; no se envían nombres de clientes ni comprobantes.</div>
-					<div class="cima-ai-scope">
-						<div><label>Desde</label><input id="cima-ai-from" type="date" class="form-control" /></div>
-						<div><label>Hasta</label><input id="cima-ai-to" type="date" class="form-control" /></div>
-						<div><label>Vendedor</label><select id="cima-ai-seller" class="form-control"><option value="">Todos</option></select></div>
-						<div><label>Compañía</label><select id="cima-ai-company" class="form-control"><option value="">Todas</option></select></div>
-						<div><label>Almacén</label><select id="cima-ai-warehouse" class="form-control"><option value="">Todos</option></select></div>
-					</div>
+					<details class="cima-ai-filter-panel">
+						<summary>Filtros de consulta</summary>
+						<div class="cima-ai-scope">
+							<div><label>Desde</label><input id="cima-ai-from" type="date" class="form-control" /></div>
+							<div><label>Hasta</label><input id="cima-ai-to" type="date" class="form-control" /></div>
+							<div><label>Vendedor</label><select id="cima-ai-seller" class="form-control"><option value="">Todos</option></select></div>
+							<div><label>Compañía</label><select id="cima-ai-company" class="form-control"><option value="">Todas</option></select></div>
+							<div><label>Almacén</label><select id="cima-ai-warehouse" class="form-control"><option value="">Todos</option></select></div>
+						</div>
+					</details>
 					<div class="cima-ai-suggestions">
 						<button type="button" data-prompt="Resume el inventario actual y destaca los productos con menor existencia.">Inventario bajo</button>
 						<button type="button" data-prompt="Resume las Notas de Entrega despachadas y sus estados.">Notas de Entrega</button>
@@ -60,31 +65,31 @@ class CimaAssistant {
 						<button type="button" data-template="Prepara un borrador para crear este producto: ">Preparar producto</button>
 					</div>
 					<div id="cima-ai-messages" class="cima-ai-messages" aria-live="polite"></div>
-					<div class="cima-ai-compose">
-						<textarea id="cima-ai-question" class="form-control" placeholder="Pregunta sobre inventario, ventas, cobros o vendedores..."></textarea>
-						<button type="button" id="cima-ai-send" class="btn btn-primary">Enviar</button>
+					<div id="cima-ai-pending" class="cima-ai-pending" role="status" aria-live="polite" hidden>
+						<span class="cima-ai-spinner" aria-hidden="true"></span>El asistente está preparando la respuesta…
 					</div>
-				</section>
-
-				<section class="cima-ai-card">
-					<h3>Agregar productos desde archivo</h3>
-					<div class="cima-ai-import-help">
-						Carga un CSV UTF-8 o XLSX de hasta 4 MB y 250 filas. Encabezados admitidos: nombre/<code>item_name</code> (obligatorio), SKU, categoría, unidad, costo, precio Detal, precio Mayor, cantidad inicial, descripción y publicar/web. Los precios/costos/cantidades vacíos quedan en cero; no se publica en la tienda ni se agrega stock salvo que lo indiques y confirmes aquí.
+					<div id="cima-ai-dropzone" class="cima-ai-dropzone" tabindex="0" role="region" aria-label="Arrastra aquí un archivo CSV o Excel, o selecciónalo para revisar productos">
+						<div><strong>Arrastra aquí un CSV o Excel (.xlsx)</strong><span> para revisar productos antes de agregarlos.</span></div>
+						<input id="cima-ai-file" type="file" class="cima-ai-file-input" accept=".csv,.xlsx" aria-label="Seleccionar archivo CSV o Excel" />
+						<label for="cima-ai-file" class="btn btn-default btn-sm">Elegir archivo</label>
 					</div>
-					<div class="form-group">
-						<label>Almacén para cantidades iniciales</label>
-						<select id="cima-ai-import-warehouse" class="form-control"><option value="">Selecciona almacén (si hay cantidades)</option></select>
+					<div class="cima-ai-import-help">CSV UTF-8 o XLSX de hasta 4 MB y 250 filas. El stock inicial y la publicación web quedan desactivados salvo que estén indicados, revisados y confirmados en la tabla.</div>
+					<div class="cima-ai-upload-options">
+						<div class="form-group">
+							<label for="cima-ai-import-warehouse">Almacén para cantidades iniciales</label>
+							<select id="cima-ai-import-warehouse" class="form-control"><option value="">Selecciona almacén (si hay cantidades)</option></select>
+						</div>
+						<button type="button" id="cima-ai-preview" class="btn btn-default">Validar archivo</button>
 					</div>
-					<div class="form-group">
-						<label>Archivo de productos</label>
-						<input id="cima-ai-file" type="file" class="form-control" accept=".csv,.xlsx" />
-					</div>
-					<button type="button" id="cima-ai-preview" class="btn btn-default">Validar y revisar</button>
 					<div id="cima-ai-import-preview"></div>
+					<div class="cima-ai-compose">
+						<textarea id="cima-ai-question" class="form-control" placeholder="Pregunta sobre inventario, ventas, cobros o vendedores..." aria-label="Escribe tu pregunta"></textarea>
+						<button type="button" id="cima-ai-send" class="btn btn-primary" disabled>Enviar</button>
+					</div>
 				</section>
 			</div>
 		`);
-		this.addMessage("assistant", "Hola. Puedo resumir inventario, ventas facturadas, cobros y Notas de Entrega. También puedo preparar un borrador de producto; para varios productos, carga un archivo y revisa todas las filas antes de confirmar.");
+		this.addMessage("assistant", "Hola. Puedo resumir inventario, ventas facturadas, cobros y Notas de Entrega, y preparar borradores de productos. También puedes arrastrar aquí un archivo Excel o CSV para revisar productos; nada se agrega al sistema hasta que revises la tabla y confirmes.");
 	}
 
 	bindEvents() {
@@ -108,13 +113,32 @@ class CimaAssistant {
 			frappe.cimaAssistantProductDraft = draft;
 			frappe.set_route("carga-productos");
 		});
+		this.wrapper.on("click", "[data-retry-index]", () => this.retryLastQuestion());
 		this.wrapper.on("click", "[data-action='settings']", () => frappe.set_route("Form", "Cima VE Settings", "Cima VE Settings"));
 		this.wrapper.on("click", "[data-action='product-loader']", () => frappe.set_route("carga-productos"));
 		this.wrapper.on("click", "#cima-ai-preview", () => this.previewImport());
 		this.wrapper.on("click", "#cima-ai-confirm-import", () => this.confirmImport());
-		this.wrapper.on("change", "#cima-ai-file, #cima-ai-import-warehouse", () => {
-			this.state.importPreview = null;
-			this.wrapper.find("#cima-ai-import-preview").empty();
+		this.wrapper.on("change", "#cima-ai-file", (event) => this.handleFileSelection(event.currentTarget.files[0]));
+		this.wrapper.on("change", "#cima-ai-import-warehouse", () => this.invalidateImportPreview());
+		this.wrapper.on("dragover", "#cima-ai-dropzone", (event) => {
+			event.preventDefault();
+			this.wrapper.find("#cima-ai-dropzone").addClass("is-dragging");
+		});
+		this.wrapper.on("dragleave", "#cima-ai-dropzone", (event) => {
+			event.preventDefault();
+			this.wrapper.find("#cima-ai-dropzone").removeClass("is-dragging");
+		});
+		this.wrapper.on("drop", "#cima-ai-dropzone", (event) => {
+			event.preventDefault();
+			this.wrapper.find("#cima-ai-dropzone").removeClass("is-dragging");
+			const transfer = (event.originalEvent || event).dataTransfer;
+			if (transfer && transfer.files && transfer.files[0]) this.handleFileSelection(transfer.files[0]);
+		});
+		this.wrapper.on("keydown", "#cima-ai-dropzone", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				this.wrapper.find("#cima-ai-file").trigger("click");
+			}
 		});
 		this.wrapper.on("click", "a[data-item-code]", (event) => {
 			event.preventDefault();
@@ -146,18 +170,36 @@ class CimaAssistant {
 		if (!b.enabled || !b.configured) {
 			const reason = !b.enabled ? "Habilita el asistente en Cima VE Settings para usar el chat." : "Configura la clave API del proveedor seleccionado para usar el chat.";
 			this.wrapper.find("#cima-ai-config-alert").html(`<div class="alert alert-warning">${this.escape(reason)} El cargador de inventario permanece disponible.</div>`);
-			this.wrapper.find("#cima-ai-send").prop("disabled", true);
 		}
+		this.wrapper.find("#cima-ai-send").prop("disabled", !b.enabled || !b.configured);
 	}
 
-	addMessage(role, text, draft = null) {
-		this.state.messages.push({ role, content: String(text || ""), draft });
+	addMessage(role, text, draft = null, options = {}) {
+		const message = {
+			role,
+			content: String(text || ""),
+			draft,
+			includeInHistory: options.includeInHistory !== false,
+			error: Boolean(options.error),
+			retry: Boolean(options.retry),
+		};
+		this.state.messages.push(message);
+		this.renderMessages();
+		return message;
+	}
+
+	renderMessages() {
 		const messageHtml = this.state.messages
-			.map((message, index) => `<div class="cima-ai-message cima-ai-message-${message.role}">${this.escape(message.content)}${message.draft
-				? `<div class="mt-2"><button type="button" class="btn btn-default btn-sm" data-draft-index="${index}">Editar borrador en Carga de Productos</button></div>` : ""}</div>`)
+			.map((message, index) => `<div class="cima-ai-message cima-ai-message-${message.role}${message.error ? " cima-ai-message-error" : ""}">${this.escape(message.content)}${message.draft
+				? `<div class="mt-2"><button type="button" class="btn btn-default btn-sm" data-draft-index="${index}">Editar borrador en Carga de Productos</button></div>` : ""}${message.retry
+				? `<div class="mt-2"><button type="button" class="btn btn-default btn-sm" data-retry-index="${index}">Reintentar</button></div>` : ""}</div>`)
 			.join("");
 		const container = this.wrapper.find("#cima-ai-messages").html(messageHtml);
-		container.scrollTop(container[0].scrollHeight);
+		if (container[0]) container.scrollTop(container[0].scrollHeight);
+	}
+
+	setPending(pending) {
+		this.wrapper.find("#cima-ai-pending").prop("hidden", !pending);
 	}
 
 	sendMessage() {
@@ -169,10 +211,23 @@ class CimaAssistant {
 			frappe.msgprint("La pregunta no puede superar 2.000 caracteres.");
 			return;
 		}
-		const history = this.state.messages.slice(-8).map(({ role, content }) => ({ role, content }));
-		this.addMessage("user", question);
+		this.state.retryRequest = null;
+		const hadRetry = this.state.messages.some((message) => message.retry);
+		this.state.messages.forEach((message) => { message.retry = false; });
+		if (hadRetry) this.renderMessages();
 		input.val("");
+		this.requestAnswer(question);
+	}
+
+	requestAnswer(question, userTurn = null) {
+		if (this.state.asking) return;
+		const history = this.state.messages
+			.filter((message) => message.includeInHistory !== false)
+			.slice(-8)
+			.map(({ role, content }) => ({ role, content }));
+		userTurn = userTurn || this.addMessage("user", question, null, { includeInHistory: false });
 		this.state.asking = true;
+		this.setPending(true);
 		this.wrapper.find("#cima-ai-send").prop("disabled", true);
 		frappe.call({
 			method: "cima_ve.api.ai_assistant.ask_assistant",
@@ -187,17 +242,52 @@ class CimaAssistant {
 			},
 			callback: (r) => {
 				if (r.message && r.message.answer) {
+					userTurn.includeInHistory = true;
+					this.state.retryRequest = null;
 					const scope = r.message.scope || {};
-					this.addMessage("assistant", `${r.message.answer}\n\nAlcance: ${scope.from_date} a ${scope.to_date}; ${scope.seller}; ${scope.warehouse}; ${scope.company}.`, r.message.product_draft);
+					const model = r.message.model ? `; modelo ${r.message.model}` : "";
+					this.addMessage("assistant", `${r.message.answer}\n\nAlcance: ${scope.from_date} a ${scope.to_date}; ${scope.seller}; ${scope.warehouse}; ${scope.company}${model}.`, r.message.product_draft);
 				} else {
-					this.addMessage("assistant", "No pude completar la consulta. Revisa la configuración del proveedor y vuelve a intentarlo.");
+					this.showRequestError(question, userTurn, r);
 				}
 			},
+			error: (r) => this.showRequestError(question, userTurn, r),
 			always: () => {
 				this.state.asking = false;
-				this.wrapper.find("#cima-ai-send").prop("disabled", false);
+				this.setPending(false);
+				this.wrapper.find("#cima-ai-send").prop("disabled", !this.state.bootstrap.enabled || !this.state.bootstrap.configured);
 			},
 		});
+	}
+
+	showRequestError(question, userTurn, response) {
+		const detail = typeof response?.message === "string" && response.message.length < 700
+			? response.message
+			: "No se pudo completar la consulta. Revisa la disponibilidad y configuración del proveedor e inténtalo de nuevo.";
+		this.state.retryRequest = { question, userTurn };
+		this.addMessage("assistant", detail, null, { includeInHistory: false, error: true, retry: true });
+	}
+
+	retryLastQuestion() {
+		const retry = this.state.retryRequest;
+		if (!retry || this.state.asking) return;
+		this.state.retryRequest = null;
+		this.state.messages.forEach((message) => { message.retry = false; });
+		this.renderMessages();
+		this.requestAnswer(retry.question, retry.userTurn);
+	}
+
+	handleFileSelection(file) {
+		if (!file) return;
+		this.state.importFile = file;
+		this.invalidateImportPreview();
+		this.previewImport(file);
+	}
+
+	invalidateImportPreview() {
+		this.state.importPreview = null;
+		const output = this.wrapper.find("#cima-ai-import-preview").empty();
+		if (this.state.importFile) output.text("Cambió el archivo o el almacén. Valida nuevamente antes de confirmar.");
 	}
 
 	readFile(file) {
@@ -209,11 +299,11 @@ class CimaAssistant {
 		});
 	}
 
-	async previewImport() {
+	async previewImport(fileOverride = null) {
 		if (this.state.previewing) return;
 		const fileInput = this.wrapper.find("#cima-ai-file");
 		const warehouseInput = this.wrapper.find("#cima-ai-import-warehouse");
-		const file = fileInput[0].files[0];
+		const file = fileOverride || this.state.importFile || fileInput[0].files[0];
 		if (!file) {
 			frappe.msgprint("Selecciona un archivo CSV o XLSX.");
 			return;
@@ -311,6 +401,7 @@ class CimaAssistant {
 
 	async createImportedProducts(token) {
 		this.state.importPreview = null;
+		this.state.importFile = null;
 		const output = this.wrapper.find("#cima-ai-import-preview").text("Creando productos...");
 		try {
 			const r = await frappe.call({

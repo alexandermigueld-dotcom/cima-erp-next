@@ -7,6 +7,7 @@ frappe.ui.form.on("Cima VE Settings", {
 		};
 		if (defaultModels[frm.doc.assistant_provider]) {
 			frm.set_value("assistant_model", defaultModels[frm.doc.assistant_provider]);
+			frm.set_value("assistant_fallback_model", "");
 		}
 	},
 	refresh(frm) {
