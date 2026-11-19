@@ -44,7 +44,7 @@
  },
  {
   "charts": [],
-  "content": "[{\"id\":\"cima-adm-hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Administración y Control — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-adm-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-adm-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-adm-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}},{\"id\":\"cima-adm-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Configuración Cima VE\",\"col\":3}}]",
+  "content": "[{\"id\":\"cima-adm-hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Administración y Control — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-adm-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-adm-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-adm-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}},{\"id\":\"cima-adm-sc-5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Carga de Productos y Lotes\",\"col\":3}},{\"id\":\"cima-adm-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Configuración Cima VE\",\"col\":3}}]",
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 1,
@@ -80,6 +80,13 @@
     "doc_view": "List",
     "label": "Métricas de Ventas",
     "link_to": "metricas-ventas",
+    "type": "Page"
+   },
+   {
+    "color": "Green",
+    "doc_view": "List",
+    "label": "Carga de Productos y Lotes",
+    "link_to": "carga-productos",
     "type": "Page"
    },
    {

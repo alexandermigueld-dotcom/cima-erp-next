@@ -81,6 +81,9 @@ class CimaSellerPortal {
 						<button type="button" class="cima-btn-inventory" data-action="open-metrics" data-admin-only="1" style="display: none;">
 							Métricas de Ventas
 						</button>
+						<button type="button" class="cima-btn-inventory" data-action="open-product-loader" data-admin-only="1" style="display: none;">
+							Cargar Productos / Lotes
+						</button>
 					</div>
 				</div>
 
@@ -228,6 +231,11 @@ class CimaSellerPortal {
 		root.on("click", "[data-action='open-metrics']", () => {
 			if (!this.isAdmin()) return;
 			frappe.set_route("metricas-ventas");
+		});
+
+		root.on("click", "[data-action='open-product-loader']", () => {
+			if (!this.isAdmin()) return;
+			frappe.set_route("carga-productos");
 		});
 
 		root.on("click", "[data-action='clear-cart']", () => {
@@ -446,6 +454,9 @@ class CimaSellerPortal {
 					chOptions = chList
 						.map((ch) => `<option value="${frappe.utils.escape_html(ch)}">${frappe.utils.escape_html(ch)}</option>`)
 						.join("");
+				}
+				if (!/mercadolibre/i.test(chOptions)) {
+					chOptions += `<option value="MercadoLibre">MercadoLibre (Sin comisión)</option>`;
 				}
 
 				this.wrapper.find("#cima-price-list, #cima-inv-price-list").html(plOptions).val(this.state.priceList);

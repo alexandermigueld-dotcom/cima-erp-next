@@ -396,7 +396,9 @@ class CimaNotasEntrega {
 					const originBadge =
 						n.ve_ne_origen === "Tienda Web"
 							? `<div><span class="label" style="background:#dbeafe;color:#1e40af;font-size:10px;">Tienda Web</span></div>`
-							: "";
+							: n.ve_ne_origen === "MercadoLibre" || String(n.canal_venta || "").toLowerCase().includes("mercado")
+								? `<div><span class="label" style="background:#fef9c3;color:#854d0e;font-size:10px;">MercadoLibre</span></div>`
+								: "";
 					const shipInfo = n.ve_ne_envio_proveedor
 						? `<div class="small text-muted">Envío: ${frappe.utils.escape_html(n.ve_ne_envio_proveedor)}${Number(n.ve_ne_envio_costo || 0) > 0 ? ` ($${Number(n.ve_ne_envio_costo).toFixed(2)})` : ""}</div>`
 						: "";
@@ -404,6 +406,9 @@ class CimaNotasEntrega {
 					let commissionCellHtml = `<span class="text-muted small">Sin comisión</span>`;
 					if (n.ve_ne_estado === "Cancelada") {
 						commissionCellHtml = `<span class="text-muted small">Anulada ($0.00)</span>`;
+					} else if (n.commission_excluded) {
+						const exclLabel = n.ve_ne_origen || n.canal_venta || "Canal empresa";
+						commissionCellHtml = `<span class="text-muted small">Sin comisión (${frappe.utils.escape_html(exclLabel)})</span>`;
 					} else if (n.commission_option || Number(n.commission_pct || 0) > 0) {
 						const optLabel = n.commission_option || `${Number(n.commission_pct || 0).toFixed(0)}%`;
 						const marginLine = isAdmin

@@ -1,0 +1,149 @@
+.cima-cp-shell {
+	max-width: 1220px;
+	margin: 0 auto;
+	padding: 12px 6px 32px;
+}
+
+.cima-cp-hero {
+	background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+	color: #fff;
+	border-radius: 12px;
+	padding: 18px 22px;
+	margin-bottom: 16px;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: center;
+	gap: 14px;
+}
+
+.cima-cp-hero h2 {
+	margin: 0 0 4px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #fff;
+}
+
+.cima-cp-hero p {
+	margin: 0;
+	font-size: 13px;
+	color: #cbd5e1;
+}
+
+.cima-cp-hero-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.cima-cp-btn-nav {
+	background: rgba(255, 255, 255, 0.14);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	color: #fff;
+	padding: 7px 13px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.cima-cp-btn-nav:hover {
+	background: rgba(255, 255, 255, 0.24);
+}
+
+.cima-cp-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 14px;
+}
+
+.cima-cp-tab {
+	background: #f1f5f9;
+	border: 1px solid #cbd5e1;
+	color: #334155;
+	padding: 9px 16px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.cima-cp-tab.active {
+	background: #1d4ed8;
+	border-color: #1d4ed8;
+	color: #fff;
+}
+
+.cima-cp-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 18px;
+	margin-bottom: 14px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.cima-cp-card-title {
+	font-size: 15px;
+	font-weight: 700;
+	color: #0f172a;
+	margin-bottom: 12px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+}
+
+.cima-cp-grid-2 {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 12px;
+}
+
+.cima-cp-grid-3 {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 12px;
+}
+
+.cima-cp-img-preview {
+	width: 110px;
+	height: 110px;
+	border: 1px dashed #cbd5e1;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	background: #f8fafc;
+	font-size: 11px;
+	color: #64748b;
+	text-align: center;
+}
+
+.cima-cp-img-preview img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.cima-cp-thumb {
+	width: 42px;
+	height: 42px;
+	border-radius: 6px;
+	object-fit: cover;
+	border: 1px solid #e2e8f0;
+}
+
+.cima-cp-batch-layout {
+	display: grid;
+	grid-template-columns: 1fr 1.35fr;
+	gap: 14px;
+}
+
+@media (max-width: 920px) {
+	.cima-cp-batch-layout {
+		grid-template-columns: 1fr;
+	}
+}

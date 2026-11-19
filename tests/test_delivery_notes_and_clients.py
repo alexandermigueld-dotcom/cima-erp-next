@@ -15,6 +15,7 @@ from cima_ve.services.delivery_note_service import (
     compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
+    is_non_commission_channel,
     parse_auto_discount_tiers,
     parse_commission_rules,
     parse_notification_emails,
@@ -485,6 +486,88 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertNotIn('d.$wrapper.find("#ne-screenshot-group").toggle(!cash);', ne_js)
         self.assertIn('clean_screenshot = (screenshot_url or "").strip()', dn_py)
         self.assertNotIn('clean_screenshot = "" if is_cash else', dn_py)
+
+    def test_tienda_web_and_mercadolibre_excluded_from_commissions(self) -> None:
+        self.assertTrue(is_non_commission_channel(origin="Tienda Web"))
+        self.assertTrue(is_non_commission_channel(origin="MercadoLibre"))
+        self.assertTrue(is_non_commission_channel(sales_channel="MercadoLibre"))
+        self.assertTrue(is_non_commission_channel(commission_option="MercadoLibre (Sin comisión)"))
+        self.assertTrue(is_non_commission_channel(sales_channel="Mercado Libre"))
+        self.assertFalse(is_non_commission_channel(origin="Facturación Rápida", sales_channel="Detal"))
+
+        notes = [
+            {
+                "name": "DN-DETAL",
+                "docstatus": 1,
+                "ve_ne_estado": "Pagada",
+                "ve_ne_origen": "Facturación Rápida",
+                "canal_venta": "Detal",
+                "ve_vendedor_usuario": "ana@cima.com",
+                "ve_vendedor_nombre": "Ana",
+                "grand_total": 100.0,
+                "net_total": 100.0,
+                "ve_ne_comision_opcion": "Detal 8%",
+                "ve_ne_comision_pct": 8.0,
+                "ve_ne_costo_total": 60.0,
+                "ve_ne_margen_ganancia": 40.0,
+                "ve_ne_comision_monto": 3.2,
+            },
+            {
+                "name": "DN-WEB",
+                "docstatus": 1,
+                "ve_ne_estado": "Pagada",
+                "ve_ne_origen": "Tienda Web",
+                "canal_venta": "Detal",
+                "ve_vendedor_usuario": "ana@cima.com",
+                "ve_vendedor_nombre": "Ana",
+                "grand_total": 200.0,
+                "net_total": 200.0,
+                "ve_ne_comision_pct": 8.0,
+                "ve_ne_costo_total": 100.0,
+                "ve_ne_margen_ganancia": 100.0,
+                "ve_ne_comision_monto": 8.0,
+            },
+            {
+                "name": "DN-ML",
+                "docstatus": 1,
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_origen": "MercadoLibre",
+                "canal_venta": "MercadoLibre",
+                "ve_vendedor_usuario": "ana@cima.com",
+                "ve_vendedor_nombre": "Ana",
+                "grand_total": 150.0,
+                "net_total": 150.0,
+                "ve_ne_comision_pct": 10.0,
+                "ve_ne_costo_total": 90.0,
+                "ve_ne_margen_ganancia": 60.0,
+                "ve_ne_comision_monto": 6.0,
+            },
+        ]
+        summarized = summarize_delivery_notes(notes)
+        self.assertEqual(summarized["summary"]["total_commission"], 3.2)
+        self.assertEqual(summarized["summary"]["paid_commission"], 3.2)
+        self.assertEqual(summarized["summary"]["pending_commission"], 0.0)
+        self.assertFalse(summarized["notes"][0]["commission_excluded"])
+        self.assertTrue(summarized["notes"][1]["commission_excluded"])
+        self.assertEqual(summarized["notes"][1]["commission_amount"], 0.0)
+        self.assertTrue(summarized["notes"][2]["commission_excluded"])
+        self.assertEqual(summarized["notes"][2]["commission_amount"], 0.0)
+
+        by_seller = summarize_seller_commissions(summarized["notes"])
+        self.assertEqual(len(by_seller), 1)
+        self.assertEqual(by_seller[0]["notes_count"], 1)
+        self.assertEqual(by_seller[0]["sales_total"], 100.0)
+        self.assertEqual(by_seller[0]["commission_total"], 3.2)
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        dn_py = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        cf_json = (root / "cima_ve" / "fixtures" / "custom_field.json").read_text(encoding="utf-8")
+        self.assertIn("is_non_commission_channel", dn_py)
+        self.assertIn("MercadoLibre (Sin comisión)", vr_js)
+        self.assertIn("MercadoLibre", ne_js)
+        self.assertIn("MercadoLibre", cf_json)
 
 
 class DeliveryNotePermissionTests(unittest.TestCase):

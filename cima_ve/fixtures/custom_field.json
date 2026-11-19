@@ -437,7 +437,7 @@
   "label": "Origen (Nota de Entrega)",
   "module": "Cima VE",
   "name": "Delivery Note-ve_ne_origen",
-  "options": "Facturación Rápida\nTienda Web",
+  "options": "Facturación Rápida\nTienda Web\nMercadoLibre",
   "read_only": 1
  },
  {

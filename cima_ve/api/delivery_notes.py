@@ -16,6 +16,7 @@ from cima_ve.services.delivery_note_service import (
     compute_margin_commission,
     compute_partial_payment_state,
     is_cash_payment_method,
+    is_non_commission_channel,
     parse_auto_discount_tiers,
     parse_commission_rules,
     resolve_commission_rule,
@@ -319,6 +320,20 @@ def create_quick_delivery_note(
     effective_channel = (matched_rule.get("channel") if matched_rule else sales_channel) or "Detal"
     comm_label = (matched_rule.get("label") if matched_rule else selected_comm_input) or effective_channel
     comm_pct = float(matched_rule.get("percentage") or 0.0) if (comm_enabled and matched_rule) else 0.0
+
+    if is_non_commission_channel(sales_channel=effective_channel, commission_option=selected_comm_input):
+        comm_pct = 0.0
+        lowered = f"{selected_comm_input} {effective_channel}".lower()
+        if "mercado" in lowered:
+            effective_channel = "MercadoLibre"
+            comm_label = "MercadoLibre (Sin comisión)"
+            if doc.meta.has_field("ve_ne_origen"):
+                doc.ve_ne_origen = "MercadoLibre"
+        elif "tienda" in lowered:
+            effective_channel = "Tienda Web"
+            comm_label = "Tienda Web (Sin comisión)"
+            if doc.meta.has_field("ve_ne_origen"):
+                doc.ve_ne_origen = "Tienda Web"
 
     _apply_required_sales_metadata(doc, sales_channel=effective_channel, sales_person=sales_person)
     doc.run_method("set_missing_values")
@@ -653,11 +668,17 @@ def get_delivery_notes(
             r["seller_name"] = frappe.utils.get_fullname(r["seller_user"]) or r["seller_user"]
 
         is_cancelled = int(r.get("docstatus") or 0) == 2 or (r.get("ve_ne_estado") or "") == "Cancelada"
-        is_web_order = (r.get("ve_ne_origen") or "") == "Tienda Web"
-        if (
+        is_excluded_channel = is_non_commission_channel(
+            r.get("ve_ne_origen"),
+            r.get("canal_venta"),
+            r.get("ve_ne_comision_opcion"),
+        )
+        if is_excluded_channel:
+            r["ve_ne_comision_pct"] = 0.0
+            r["ve_ne_comision_monto"] = 0.0
+        elif (
             comm_enabled
             and not is_cancelled
-            and not is_web_order
             and float(r.get("ve_ne_comision_pct") or 0.0) <= 0.0
         ):
             rule = resolve_commission_rule(

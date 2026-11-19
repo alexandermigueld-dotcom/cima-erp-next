@@ -273,6 +273,28 @@ DEFAULT_COMMISSION_RULES: list[dict] = [
     {"label": "Mayor 10%", "channel": "Mayor", "percentage": 10.0},
 ]
 
+NON_COMMISSION_CHANNELS: set[str] = {"tienda web", "mercadolibre", "mercado libre"}
+
+
+def is_non_commission_channel(
+    origin: str | None = "",
+    sales_channel: str | None = "",
+    commission_option: str | None = "",
+) -> bool:
+    """Devuelve True si la nota corresponde a canales sin comisión de vendedor (Tienda Web o MercadoLibre)."""
+    for raw in (origin, sales_channel, commission_option):
+        norm = " ".join(str(raw or "").strip().lower().split())
+        if not norm:
+            continue
+        if (
+            norm in NON_COMMISSION_CHANNELS
+            or norm.startswith("tienda web")
+            or norm.startswith("mercadolibre")
+            or norm.startswith("mercado libre")
+        ):
+            return True
+    return False
+
 
 def parse_commission_rules(raw_rules: str | list | None) -> list[dict]:
     """Parsea las reglas configurables de comisión por canal/modalidad desde Cima VE Settings."""
@@ -351,7 +373,16 @@ def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
     """Agrupa las notas activas (no canceladas) por vendedor para calcular el pago de comisiones."""
     buckets: dict[str, dict] = {}
     for n in notes or []:
-        if (n.get("ve_ne_estado") or "") == "Cancelada" or int(n.get("docstatus") or 0) == 2:
+        if (
+            (n.get("ve_ne_estado") or "") == "Cancelada"
+            or int(n.get("docstatus") or 0) == 2
+            or n.get("commission_excluded")
+            or is_non_commission_channel(
+                n.get("ve_ne_origen"),
+                n.get("canal_venta"),
+                n.get("commission_option") or n.get("ve_ne_comision_opcion"),
+            )
+        ):
             continue
         seller_user = str(n.get("seller_user") or n.get("ve_vendedor_usuario") or n.get("owner") or "Sin vendedor").strip()
         seller_name = str(n.get("seller_name") or n.get("ve_vendedor_nombre") or seller_user).strip()
@@ -495,7 +526,13 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
         cost_total = round(float(row.get("ve_ne_costo_total") or 0.0), 2)
         margin_amount = round(float(row.get("ve_ne_margen_ganancia") or 0.0), 2)
         comm_amount = round(float(row.get("ve_ne_comision_monto") or 0.0), 2)
-        if estado == "Cancelada":
+        excluded_by_channel = is_non_commission_channel(
+            row.get("ve_ne_origen"),
+            row.get("canal_venta"),
+            row.get("ve_ne_comision_opcion"),
+        )
+        if estado == "Cancelada" or excluded_by_channel:
+            comm_pct = 0.0
             comm_amount = 0.0
         else:
             total_cost += cost_total
@@ -506,6 +543,7 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             else:
                 pending_commission += comm_amount
 
+        item["commission_excluded"] = excluded_by_channel
         item["commission_option"] = comm_option
         item["commission_pct"] = comm_pct
         item["cost_total"] = cost_total
