@@ -5,7 +5,14 @@ frappe.pages["carga-productos"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	new CimaProductLoader(page, wrapper);
+	wrapper.cimaProductLoader = new CimaProductLoader(page, wrapper);
+};
+
+frappe.pages["carga-productos"].on_page_show = function (wrapper) {
+	const draft = frappe.cimaAssistantProductDraft;
+	if (!draft) return;
+	delete frappe.cimaAssistantProductDraft;
+	wrapper.cimaProductLoader.offerAssistantDraft(draft);
 };
 
 class CimaProductLoader {
@@ -26,6 +33,7 @@ class CimaProductLoader {
 				exchange_rate: {},
 			},
 			newImage: { fileName: "", base64: "" },
+			reviewingProduct: false,
 			products: [],
 			batchItems: [],
 		};
@@ -33,6 +41,31 @@ class CimaProductLoader {
 		this.renderShell();
 		this.bindEvents();
 		this.loadBootstrap();
+	}
+
+	offerAssistantDraft(draft) {
+		const root = this.wrapper;
+		this.switchTab("nuevo");
+		const alert = root.find("#cp-alert-area");
+		const fields = root.find("#cp-new-name, #cp-new-code, #cp-new-desc, #cp-new-cost, #cp-new-detal, #cp-new-mayor, #cp-new-image");
+		const applyDraft = () => {
+			root.find("#cp-new-name").val(draft.item_name);
+			root.find("#cp-new-code").val(draft.item_code || "");
+			root.find("#cp-new-desc").val(draft.description || "");
+			root.find("#cp-new-cost, #cp-new-detal, #cp-new-mayor, #cp-new-image").val("");
+			root.find("#cp-new-qty").val("0");
+			root.find("#cp-new-web").prop("checked", false);
+			root.find("#cp-new-detal-bs, #cp-new-mayor-bs").text("");
+			root.find("#cp-new-img-preview").text("Sin imagen");
+			this.state.newImage = { fileName: "", base64: "" };
+			alert.html('<div class="alert alert-info">Borrador de Asistente CIMA. Revisa y completa los campos; aún no se ha creado ningún producto.</div>');
+		};
+		if (fields.toArray().some((field) => field.value) || Number(root.find("#cp-new-qty").val()) > 0) {
+			alert.html('<div class="alert alert-info">Hay un formulario en curso. <button type="button" class="btn btn-default btn-sm">Reemplazar con el borrador de Asistente CIMA</button></div>');
+			alert.find("button").one("click", applyDraft);
+		} else {
+			applyDraft();
+		}
 	}
 
 	getBsRate() {
@@ -400,7 +433,8 @@ class CimaProductLoader {
 		});
 	}
 
-	submitNewProduct() {
+	async submitNewProduct() {
+		if (this.state.reviewingProduct) return;
 		const root = this.wrapper;
 		const itemName = (root.find("#cp-new-name").val() || "").trim();
 		if (!itemName) {
@@ -419,10 +453,62 @@ class CimaProductLoader {
 			initial_qty: root.find("#cp-new-qty").val() || 0,
 			description: (root.find("#cp-new-desc").val() || "").trim(),
 			show_in_website: root.find("#cp-new-web").is(":checked") ? 1 : 0,
-			image_file_name: this.state.newImage.fileName || "",
-			image_data_base64: this.state.newImage.base64 || "",
 		};
+		const image = this.state.newImage;
+		this.state.reviewingProduct = true;
+		try {
+			const r = await frappe.call({
+				method: "cima_ve.api.products.preview_quick_product",
+				args: { product: JSON.stringify(payload) },
+				freeze: true,
+				freeze_message: "Validando producto y código SKU...",
+			});
+			if (r.message) this.reviewNewProduct(r.message, image);
+		} catch {
+			// Frappe muestra los errores de validación del servidor.
+		} finally {
+			this.state.reviewingProduct = false;
+		}
+	}
 
+	reviewNewProduct(product, image) {
+		const b = this.state.bootstrap;
+		const rows = [
+			["Producto", product.item_name], ["SKU", product.item_code], ["Descripción", product.description],
+			["Categoría", product.item_group], ["Unidad", product.stock_uom], ["Costo unitario (USD)", product.cost_rate],
+			["Precio Detal (USD)", product.detal_price > 0 && b.detal_price_list ? product.detal_price : "Sin registro de precio"],
+			["Precio Mayor (USD)", product.mayor_price > 0 && b.mayor_price_list ? product.mayor_price : "Sin registro de precio"],
+			["Cantidad inicial", product.initial_qty], ["Almacén", product.initial_qty > 0 ? product.warehouse : "Sin entrada de stock"],
+			["Marcado para la web", product.show_in_website ? "Sí" : "No"], ["Imagen", image.fileName || "Sin imagen"],
+		].map(([label, value]) => `<tr><th scope="row">${label}</th><td>${frappe.utils.escape_html(String(value))}</td></tr>`).join("");
+		let approved = false;
+		const dialog = new frappe.ui.Dialog({
+			title: "Confirmar nuevo producto",
+			fields: [{ fieldtype: "HTML", fieldname: "review", options: `
+				<p>Revisa los valores que se guardarán en ERPNext.</p>
+				<div style="overflow:auto; max-height:55vh;" tabindex="0">
+					<table class="table table-bordered table-sm"><thead><tr><th>Campo</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table>
+				</div>` }],
+			secondary_action_label: "Cancelar",
+			secondary_action: () => dialog.hide(),
+			primary_action_label: "Confirmar y crear producto",
+			primary_action: () => {
+				if (approved) return;
+				approved = true;
+				dialog.hide();
+				this.createNewProduct({
+					...product,
+					show_in_website: Number(product.show_in_website),
+					image_file_name: image.fileName || "",
+					image_data_base64: image.base64 || "",
+				});
+			},
+		});
+		dialog.show();
+	}
+
+	createNewProduct(payload) {
+		const root = this.wrapper;
 		frappe.call({
 			method: "cima_ve.api.products.create_quick_product",
 			args: payload,

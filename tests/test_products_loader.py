@@ -4,6 +4,8 @@ import json
 import pathlib
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from cima_ve.services.product_service import (
     normalize_item_code,
@@ -95,11 +97,35 @@ class ProductLoaderWiringAndPermissionTests(unittest.TestCase):
             with self.assertRaises(FakePermissionError):
                 products_api.get_product_loader_bootstrap()
             with self.assertRaises(FakePermissionError):
+                products_api.preview_quick_product(product='{"item_name":"Test"}')
+            with self.assertRaises(FakePermissionError):
                 products_api.create_quick_product(item_name="Test")
             with self.assertRaises(FakePermissionError):
                 products_api.add_stock_batch(items=[], warehouse="WH")
         finally:
             del sys.modules["frappe"]
+
+    def test_product_preview_normalizes_sku_and_rejects_duplicates_without_writes(self) -> None:
+        from cima_ve.api.products import preview_quick_product
+
+        def throw(message):
+            raise ValueError(message)
+
+        exists = Mock(return_value=False)
+        frappe = SimpleNamespace(
+            session=SimpleNamespace(user="admin"), only_for=Mock(), throw=throw,
+            db=SimpleNamespace(exists=exists), get_doc=Mock(),
+        )
+        product = '{"item_name":"Cable rápido","show_in_website":0}'
+        with patch.dict(sys.modules, {"frappe": frappe}):
+            result = preview_quick_product(product)
+            self.assertEqual(result["item_code"], "CABLE-RAPIDO")
+            self.assertFalse(result["show_in_website"])
+            exists.assert_called_once_with("Item", "CABLE-RAPIDO")
+            exists.return_value = True
+            with self.assertRaisesRegex(ValueError, "ya existe"):
+                preview_quick_product(product)
+        frappe.get_doc.assert_not_called()
 
     def test_page_workspace_and_navigation_wiring(self) -> None:
         root = pathlib.Path(__file__).resolve().parent.parent

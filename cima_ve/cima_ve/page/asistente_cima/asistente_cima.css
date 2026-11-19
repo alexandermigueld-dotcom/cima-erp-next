@@ -1,0 +1,154 @@
+.cima-ai-shell {
+	padding: 12px 4px 28px;
+}
+
+.cima-ai-hero {
+	background: linear-gradient(135deg, #131921 0%, #232f3e 100%);
+	color: #fff;
+	border-radius: 12px;
+	padding: 18px 22px;
+	margin-bottom: 16px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.cima-ai-hero h2 {
+	margin: 0 0 4px;
+	font-size: 20px;
+	font-weight: 700;
+	color: #fff;
+}
+
+.cima-ai-hero p {
+	margin: 0;
+	font-size: 13px;
+	color: #cbd5e1;
+}
+
+.cima-ai-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+	gap: 14px;
+	align-items: start;
+}
+
+.cima-ai-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 16px;
+	margin-bottom: 14px;
+}
+
+.cima-ai-card h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.cima-ai-scope {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+	gap: 9px;
+	margin: 12px 0;
+}
+
+.cima-ai-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 9px 0 12px;
+}
+
+.cima-ai-suggestions button {
+	border: 1px solid #cbd5e1;
+	background: #f8fafc;
+	border-radius: 16px;
+	padding: 5px 10px;
+	font-size: 12px;
+}
+
+.cima-ai-messages {
+	min-height: 250px;
+	max-height: 440px;
+	overflow-y: auto;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	background: #f8fafc;
+	padding: 10px;
+}
+
+.cima-ai-message {
+	white-space: pre-wrap;
+	line-height: 1.5;
+	padding: 10px 12px;
+	border-radius: 8px;
+	margin-bottom: 8px;
+	max-width: 92%;
+	font-size: 13px;
+}
+
+.cima-ai-message-user {
+	background: #dbeafe;
+	color: #1e3a8a;
+	margin-left: auto;
+}
+
+.cima-ai-message-assistant {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	color: #0f172a;
+}
+
+.cima-ai-compose {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 8px;
+	margin-top: 9px;
+}
+
+.cima-ai-compose textarea {
+	min-height: 72px;
+	resize: vertical;
+}
+
+.cima-ai-import-help {
+	font-size: 12px;
+	color: #64748b;
+	line-height: 1.5;
+	margin-bottom: 10px;
+}
+
+.cima-ai-preview-table-wrap {
+	overflow-x: auto;
+	margin-top: 12px;
+}
+
+.cima-ai-preview-table {
+	width: 100%;
+	font-size: 12px;
+}
+
+.cima-ai-preview-table th,
+.cima-ai-preview-table td {
+	padding: 7px;
+	border-bottom: 1px solid #e2e8f0;
+	vertical-align: top;
+}
+
+.cima-ai-error {
+	color: #b91c1c;
+}
+
+.cima-ai-ready {
+	color: #166534;
+}
+
+@media (max-width: 900px) {
+	.cima-ai-layout {
+		grid-template-columns: 1fr;
+	}
+}

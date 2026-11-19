@@ -52,7 +52,15 @@
   "fx_sync_now",
   "commissions_section",
   "commission_enabled",
-  "commission_rules"
+  "commission_rules",
+  "assistant_section",
+  "assistant_enabled",
+  "assistant_provider",
+  "assistant_model",
+  "assistant_include_repository",
+  "assistant_openai_api_key",
+  "assistant_anthropic_api_key",
+  "assistant_gemini_api_key"
  ],
  "fields": [
   {
@@ -343,11 +351,59 @@
    "fieldname": "commission_rules",
    "fieldtype": "Small Text",
    "label": "Opciones de Comisión por Canal (JSON)"
+  },
+  {
+   "fieldname": "assistant_section",
+   "fieldtype": "Section Break",
+   "label": "Asistente CIMA (solo administradores)"
+  },
+  {
+   "default": "0",
+   "description": "Habilita el chat con IA. Las consultas de inventario se realizan aparte y no dependen de esta opción.",
+   "fieldname": "assistant_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Asistente CIMA"
+  },
+  {
+   "default": "OpenAI",
+   "fieldname": "assistant_provider",
+   "fieldtype": "Select",
+   "label": "Proveedor de IA",
+   "options": "OpenAI\nAnthropic\nGemini"
+  },
+  {
+   "default": "gpt-4o-mini",
+   "description": "Identificador del modelo habilitado en tu cuenta del proveedor seleccionado.",
+   "fieldname": "assistant_model",
+   "fieldtype": "Data",
+   "label": "Modelo de IA"
+  },
+  {
+   "default": "1",
+   "description": "Incluye documentación pública seleccionada (README.md, CONTEXT.md y AGENTS.md) del repositorio CIMA.",
+   "fieldname": "assistant_include_repository",
+   "fieldtype": "Check",
+   "label": "Incluir contexto del repositorio público"
+  },
+  {
+   "fieldname": "assistant_openai_api_key",
+   "fieldtype": "Password",
+   "label": "OpenAI API Key"
+  },
+  {
+   "fieldname": "assistant_anthropic_api_key",
+   "fieldtype": "Password",
+   "label": "Anthropic API Key"
+  },
+  {
+   "fieldname": "assistant_gemini_api_key",
+   "fieldtype": "Password",
+   "label": "Gemini API Key"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-15 15:55:00.000000",
+ "modified": "2026-11-19 18:20:00.000000",
  "modified_by": "Administrator",
  "module": "Cima VE",
  "name": "Cima VE Settings",
