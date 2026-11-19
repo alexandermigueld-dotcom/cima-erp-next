@@ -1,143 +1,208 @@
 .cima-ai-shell {
-	padding: 12px 4px 28px;
+	max-width: 980px;
+	margin: 0 auto;
+	padding: 6px 0 10px;
+	display: flex;
+	flex-direction: column;
+	height: calc(100vh - 110px);
+	min-height: 460px;
 }
 
-.cima-ai-hero {
-	background: linear-gradient(135deg, #131921 0%, #232f3e 100%);
-	color: #fff;
-	border-radius: 12px;
-	padding: 18px 22px;
-	margin-bottom: 16px;
+.cima-ai-topbar {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	gap: 8px;
+	margin-bottom: 8px;
+	flex-shrink: 0;
 }
 
-.cima-ai-hero h2 {
-	margin: 0 0 4px;
-	font-size: 20px;
-	font-weight: 700;
-	color: #fff;
+.cima-ai-topbar-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 }
 
-.cima-ai-hero p {
+.cima-ai-topbar-title h2 {
 	margin: 0;
-	font-size: 13px;
-	color: #cbd5e1;
+	font-size: 15px;
+	font-weight: 700;
+	color: #0f172a;
 }
 
-.cima-ai-layout {
-	display: block;
-}
-
-.cima-ai-card {
-	background: #fff;
+.cima-ai-badge {
+	font-size: 11px;
+	font-weight: 600;
+	color: #475569;
+	background: #f1f5f9;
 	border: 1px solid #e2e8f0;
-	border-radius: 10px;
-	padding: 16px;
-	margin-bottom: 14px;
+	border-radius: 999px;
+	padding: 1px 8px;
+}
+
+.cima-ai-topbar-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+#cima-ai-config-alert .alert {
+	padding: 7px 12px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	border-radius: 8px;
 }
 
 .cima-ai-chat-card {
-	max-width: 1120px;
-	margin: 0 auto 14px;
-	padding: 20px;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 14px;
+	overflow: hidden;
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
 }
 
-.cima-ai-card h3 {
-	margin: 0 0 8px;
-	font-size: 16px;
-	font-weight: 700;
+.cima-ai-drag-overlay {
+	display: none;
+	position: absolute;
+	inset: 0;
+	z-index: 20;
+	background: rgba(239, 246, 255, 0.92);
+	border: 2px dashed #2563eb;
+	border-radius: 14px;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	pointer-events: none;
+}
+
+.cima-ai-chat-card.is-dragging .cima-ai-drag-overlay {
+	display: flex;
+}
+
+.cima-ai-drag-overlay-box {
+	text-align: center;
+	color: #1e3a8a;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 14px;
+}
+
+.cima-ai-drag-overlay-box span {
+	font-size: 12px;
+	color: #475569;
+}
+
+.cima-ai-filter-panel {
+	flex-shrink: 0;
+	background: #f8fafc;
+	border-bottom: 1px solid #e2e8f0;
+	padding: 10px 14px;
 }
 
 .cima-ai-scope {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
-	gap: 9px;
-	margin: 12px 0;
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	gap: 8px;
 }
 
-.cima-ai-filter-panel {
-	margin-top: 12px;
-	border-bottom: 1px solid #e2e8f0;
-}
-
-.cima-ai-filter-panel summary {
-	padding: 8px 0;
-	color: #475569;
-	cursor: pointer;
-	font-size: 12px;
+.cima-ai-scope label {
+	display: block;
+	font-size: 11px;
 	font-weight: 600;
-}
-
-.cima-ai-suggestions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin: 9px 0 12px;
-}
-
-.cima-ai-suggestions button {
-	border: 1px solid #cbd5e1;
-	background: #f8fafc;
-	border-radius: 16px;
-	padding: 5px 10px;
-	font-size: 12px;
+	color: #475569;
+	margin-bottom: 3px;
 }
 
 .cima-ai-messages {
-	height: min(62vh, 680px);
-	min-height: 360px;
-	max-height: 720px;
+	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
-	border: 1px solid #e2e8f0;
-	border-radius: 12px;
 	background: #f8fafc;
-	padding: 18px;
+	padding: 14px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.cima-ai-message-row {
+	display: flex;
+	width: 100%;
+}
+
+.cima-ai-message-row-user {
+	justify-content: flex-end;
+}
+
+.cima-ai-message-row-assistant {
+	justify-content: flex-start;
 }
 
 .cima-ai-message {
+	padding: 9px 13px;
+	border-radius: 14px;
+	max-width: min(82%, 720px);
+	font-size: 13.5px;
+	line-height: 1.48;
+	word-break: break-word;
+}
+
+.cima-ai-message-body {
 	white-space: pre-wrap;
-	line-height: 1.5;
-	padding: 12px 15px;
-	border-radius: 12px;
-	margin-bottom: 10px;
-	max-width: min(88%, 820px);
-	font-size: 14px;
 }
 
 .cima-ai-message-user {
-	background: #dbeafe;
-	color: #1e3a8a;
-	margin-left: auto;
+	background: #2563eb;
+	color: #fff;
+	border-bottom-right-radius: 4px;
 }
 
 .cima-ai-message-assistant {
 	background: #fff;
 	border: 1px solid #e2e8f0;
 	color: #0f172a;
+	border-bottom-left-radius: 4px;
 }
 
 .cima-ai-message-error {
 	border-color: #fecaca;
-	background: #fff7f7;
+	background: #fef2f2;
 	color: #991b1b;
 }
 
+.cima-ai-message-meta {
+	font-size: 11px;
+	color: #64748b;
+	margin-top: 6px;
+	padding-top: 5px;
+	border-top: 1px solid #f1f5f9;
+}
+
+.cima-ai-message-actions {
+	margin-top: 7px;
+}
+
 .cima-ai-pending:not([hidden]) {
+	flex-shrink: 0;
 	display: flex;
 	align-items: center;
-	gap: 9px;
-	padding: 11px 14px;
+	gap: 8px;
+	padding: 7px 16px;
+	background: #f8fafc;
+	border-top: 1px solid #f1f5f9;
 	color: #475569;
-	font-size: 13px;
+	font-size: 12px;
 }
 
 .cima-ai-spinner {
-	width: 16px;
-	height: 16px;
+	width: 14px;
+	height: 14px;
 	border: 2px solid #cbd5e1;
 	border-top-color: #2563eb;
 	border-radius: 50%;
@@ -148,32 +213,77 @@
 	to { transform: rotate(360deg); }
 }
 
-.cima-ai-dropzone {
+.cima-ai-import-preview-slot:not(:empty) {
+	flex-shrink: 0;
+	max-height: 34vh;
+	overflow-y: auto;
+	border-top: 1px solid #e2e8f0;
+	background: #fff;
+	padding: 10px 14px;
+}
+
+.cima-ai-import-header {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
-	min-height: 66px;
-	margin-top: 14px;
-	padding: 12px 15px;
-	border: 1px dashed #94a3b8;
-	border-radius: 10px;
+	gap: 8px;
+	font-size: 12.5px;
+}
+
+.cima-ai-import-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.cima-ai-composer-wrap {
+	flex-shrink: 0;
+	background: #fff;
+	border-top: 1px solid #e2e8f0;
+	padding: 8px 14px 10px;
+}
+
+.cima-ai-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.cima-ai-suggestions button {
+	border: 1px solid #e2e8f0;
 	background: #f8fafc;
-	color: #475569;
-	font-size: 13px;
-	transition: border-color 0.15s ease, background 0.15s ease;
+	color: #334155;
+	border-radius: 999px;
+	padding: 3px 10px;
+	font-size: 11.5px;
+	line-height: 1.4;
+	cursor: pointer;
+	transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.cima-ai-dropzone.is-dragging,
-.cima-ai-dropzone:focus-visible {
-	border-color: #2563eb;
+.cima-ai-suggestions button:hover {
 	background: #eff6ff;
-	outline: none;
+	border-color: #bfdbfe;
+	color: #1e40af;
 }
 
-.cima-ai-dropzone label {
-	flex: 0 0 auto;
-	margin: 0;
+.cima-ai-compose {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+	background: #f8fafc;
+	border: 1px solid #cbd5e1;
+	border-radius: 14px;
+	padding: 6px 8px;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.cima-ai-compose:focus-within {
+	border-color: #2563eb;
+	background: #fff;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 .cima-ai-file-input {
@@ -188,56 +298,75 @@
 	border: 0;
 }
 
-.cima-ai-upload-options {
-	display: flex;
-	align-items: end;
-	gap: 12px;
-	margin-top: 10px;
+.cima-ai-attach-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	margin: 0;
+	border-radius: 8px;
+	color: #475569;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: background 0.15s ease, color 0.15s ease;
 }
 
-.cima-ai-upload-options .form-group {
-	flex: 1;
-	max-width: 420px;
-	margin-bottom: 0;
-}
-
-.cima-ai-import-help {
-	font-size: 12px;
-	color: #64748b;
-	line-height: 1.5;
-	margin-bottom: 10px;
-}
-
-.cima-ai-compose {
-	display: grid;
-	grid-template-columns: 1fr auto;
-	gap: 8px;
-	margin-top: 9px;
+.cima-ai-attach-btn:hover {
+	background: #e2e8f0;
+	color: #0f172a;
 }
 
 .cima-ai-compose textarea {
-	min-height: 88px;
-	resize: vertical;
+	flex: 1;
+	min-height: 28px;
+	max-height: 110px;
+	padding: 4px 2px;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	resize: none;
+	font-size: 13.5px;
+	line-height: 1.4;
 }
 
-.cima-ai-compose .btn {
-	min-width: 92px;
-	align-self: stretch;
+.cima-ai-compose textarea:focus {
+	outline: none;
+	box-shadow: none;
+	background: transparent;
+}
+
+.cima-ai-send-btn {
+	flex-shrink: 0;
+	border-radius: 9px;
+	padding: 5px 14px;
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+.cima-ai-compose-hint {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 5px;
+	font-size: 11px;
+	color: #94a3b8;
 }
 
 .cima-ai-preview-table-wrap {
 	overflow-x: auto;
-	margin-top: 12px;
+	margin-top: 8px;
 }
 
 .cima-ai-preview-table {
 	width: 100%;
-	font-size: 12px;
+	font-size: 11.5px;
+	margin-bottom: 0;
 }
 
 .cima-ai-preview-table th,
 .cima-ai-preview-table td {
-	padding: 7px;
+	padding: 6px;
 	border-bottom: 1px solid #e2e8f0;
 	vertical-align: top;
 }
@@ -250,29 +379,41 @@
 	color: #166534;
 }
 
+.cima-ai-action-badge {
+	display: inline-block;
+	padding: 2px 7px;
+	border-radius: 999px;
+	font-size: 10.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.cima-ai-action-badge.is-create {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.cima-ai-action-badge.is-update {
+	background: #dbeafe;
+	color: #1d4ed8;
+}
 
 @media (max-width: 700px) {
-	.cima-ai-chat-card {
-		padding: 12px;
+	.cima-ai-shell {
+		height: calc(100vh - 92px);
+		min-height: 400px;
 	}
 
 	.cima-ai-messages {
-		height: 56vh;
-		min-height: 300px;
-		padding: 12px;
+		padding: 10px 12px;
 	}
 
 	.cima-ai-message {
-		max-width: 96%;
+		max-width: 94%;
+		font-size: 13px;
 	}
 
-	.cima-ai-dropzone,
-	.cima-ai-upload-options {
-		align-items: stretch;
-		flex-direction: column;
-	}
-
-	.cima-ai-upload-options .form-group {
-		max-width: none;
+	.cima-ai-compose-hint span:last-child {
+		display: none;
 	}
 }

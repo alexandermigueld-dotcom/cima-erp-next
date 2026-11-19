@@ -139,12 +139,12 @@ test("dropping a spreadsheet starts preview only and never confirms an import", 
 		on(event, selector, handler) {
 			if (typeof selector === "string" && typeof handler === "function") handlers[`${event}:${selector}`] = handler;
 		},
-		find() { return { removeClass() {}, empty() { return this; }, text() { return this; } }; },
+		find() { return { removeClass() {}, empty() { return this; }, text() { return this; }, html() { return this; }, val() { return this; } }; },
 	};
 	assistant.previewImport = (selectedFile) => previewed.push(selectedFile);
 	assistant.bindEvents();
 	let prevented = false;
-	handlers["drop:#cima-ai-dropzone"]({
+	handlers["drop:#cima-ai-chat"]({
 		preventDefault() { prevented = true; },
 		originalEvent: { dataTransfer: { files: [file] } },
 	});
@@ -153,4 +153,53 @@ test("dropping a spreadsheet starts preview only and never confirms an import", 
 	assert.equal(assistant.state.importFile, file);
 	assert.equal(assistant.state.importPreview, null);
 	assert.equal(requests.length, 0);
+});
+
+test("price update preview renders current-to-new prices and AI chat updates staged preview without confirming", () => {
+	const { dialogs, requests, assistant } = setup();
+	assistant.escape = (value) => String(value ?? "").replaceAll("<", "&lt;");
+	const preview = {
+		token: "tok-1",
+		row_count: 1,
+		create_count: 0,
+		update_count: 1,
+		can_confirm: true,
+		rows: [{
+			row: 2,
+			action: "update_price",
+			item_code: "SKU-EX",
+			item_name: "Router",
+			current_detal_price: 20,
+			detal_price: 25,
+			current_mayor_price: 16,
+			mayor_price: 20,
+			errors: [],
+		}],
+	};
+	const html = assistant.importTable(preview);
+	assert.match(html, /Actualizar precio/);
+	assert.match(html, /20.*→.*25/);
+
+	const rendered = [];
+	assistant.renderImportPreview = (p) => rendered.push(p);
+	assistant.state = {
+		bootstrap: { enabled: true, configured: true },
+		messages: [],
+		asking: false,
+		retryRequest: null,
+		importPreview: preview,
+	};
+	assistant.wrapper = { find: (selector) => ({ val: () => selector === "#cima-ai-question" ? "Sube 10% el detal" : "", prop() {}, html() { return this; }, scrollTop() { return this; } }) };
+	assistant.addMessage = (...args) => {
+		const msg = { role: args[0], content: args[1], includeInHistory: true };
+		assistant.state.messages.push(msg);
+		return msg;
+	};
+	assistant.sendMessage();
+	assert.equal(requests[0].args.import_token, "tok-1");
+	const updated = { ...preview, token: "tok-2" };
+	requests[0].callback({ message: { answer: "Ajustado en vista previa.", scope: {}, updated_import_preview: updated } });
+	assert.equal(assistant.state.importPreview.token, "tok-2");
+	assert.deepEqual(rendered, [updated]);
+	assert.equal(dialogs.length, 0);
 });

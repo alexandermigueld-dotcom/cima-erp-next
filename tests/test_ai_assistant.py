@@ -400,6 +400,73 @@ class AssistantPermissionAndWiringTests(unittest.TestCase):
         self.assertIn("System Manager", {role["role"] for role in admin_workspace["roles"]})
         self.assertIn("asistente-cima", {shortcut["link_to"] for shortcut in admin_workspace["shortcuts"]})
 
+    def test_import_supports_mixed_new_products_and_existing_price_updates(self) -> None:
+        existing_items = {
+            "SKU-EX": {
+                "item_code": "SKU-EX",
+                "item_name": "Router WiFi",
+                "detal_price": 25.0,
+                "mayor_price": 20.0,
+                "cost_rate": 15.0,
+            }
+        }
+        rows = [
+            {"item_code": "SKU-EX", "detal_price": "30", "mayor_price": "24"},
+            {"item_code": "SKU-NEW", "item_name": "Cable HDMI", "detal_price": "10", "mayor_price": "8"},
+        ]
+        preview = prepare_inventory_import(rows, existing_items=existing_items, allow_price_updates=True)
+        self.assertFalse(preview["has_errors"])
+        self.assertEqual(preview["create_count"], 1)
+        self.assertEqual(preview["update_count"], 1)
+        self.assertEqual(preview["rows"][0]["action"], "update_price")
+        self.assertEqual(preview["rows"][0]["item_name"], "Router WiFi")
+        self.assertEqual(preview["rows"][0]["current_detal_price"], 25.0)
+        self.assertEqual(preview["rows"][0]["detal_price"], 30.0)
+        self.assertEqual(preview["rows"][1]["action"], "create")
+        self.assertEqual(preview["updates"], [{"item_code": "SKU-EX", "detal_price": 30.0, "mayor_price": 24.0, "cost_rate": None}])
+        self.assertEqual(len(preview["products"]), 1)
+
+        missing_price = prepare_inventory_import(
+            [{"item_code": "SKU-EX"}],
+            existing_items=existing_items,
+            allow_price_updates=True,
+        )
+        self.assertTrue(missing_price["has_errors"])
+        self.assertIn("Indica al menos un precio", missing_price["rows"][0]["errors"][0])
+
+    def test_ai_column_mapping_and_price_adjustment_helpers(self) -> None:
+        from cima_ve.services.assistant_service import (
+            apply_ai_price_adjustments,
+            parse_assistant_response,
+            parse_column_mapping_response,
+            parse_inventory_upload_with_mapping,
+        )
+
+        csv_bytes = "Cod_Interno,Art_Desc,Valor_Tienda,Valor_Mayorista\nSKU-1,Cargador,10,8\n".encode("utf-8")
+        encoded = base64.b64encode(csv_bytes).decode("ascii")
+
+        def fake_mapper(headers, sample_rows):
+            self.assertIn("Valor_Tienda", headers)
+            self.assertEqual(len(sample_rows), 1)
+            return parse_column_mapping_response(
+                '```json\n{"mapping":{"Cod_Interno":"item_code","Art_Desc":"item_name","Valor_Tienda":"detal_price","Valor_Mayorista":"mayor_price","Evil":"__proto__"}}\n```',
+                headers,
+            )
+
+        rows, ai_map = parse_inventory_upload_with_mapping("lista.csv", encoded, ai_column_mapper=fake_mapper)
+        self.assertEqual(ai_map["Valor_Tienda"], "detal_price")
+        self.assertEqual(rows[0]["item_code"], "SKU-1")
+        self.assertEqual(rows[0]["detal_price"], "10")
+
+        parsed = parse_assistant_response(json.dumps({
+            "answer": "Apliqué un aumento del 10% al detal.",
+            "price_adjustment": {"target": "all", "detal_pct": 10, "mayor_from_detal_discount_pct": 20},
+        }))
+        self.assertEqual(parsed["price_adjustment"]["detal_pct"], 10.0)
+        adjusted = apply_ai_price_adjustments(rows, adjustment=parsed["price_adjustment"])
+        self.assertEqual(adjusted[0]["detal_price"], "11.0")
+        self.assertEqual(adjusted[0]["mayor_price"], "8.8")
+
 
 if __name__ == "__main__":
     unittest.main()

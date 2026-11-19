@@ -8,11 +8,15 @@ from cima_ve.api._compat import whitelist
 from cima_ve.services.assistant_service import (
     AIProviderOverloadedError,
     DEFAULT_MODELS,
+    apply_ai_price_adjustments,
+    build_column_mapping_prompt,
     call_ai_provider,
     fetch_public_repository_context,
     normalize_chat_history,
     parse_assistant_response,
+    parse_column_mapping_response,
     parse_inventory_upload,
+    parse_inventory_upload_with_mapping,
     prepare_inventory_import,
 )
 
@@ -335,7 +339,12 @@ def _assistant_system_prompt(context: dict, repository_context: str) -> str:
         'Responde con un objeto JSON {"answer":"texto"}. Solo si el usuario pide explícitamente crear un producto nuevo '
         'y proporciona su nombre, incluye "product_draft" con "item_name" y, si el usuario los proporcionó, "item_code" '
         'y "description". No inventes datos del producto ni incluyas precios, costos, cantidades o publicación en el borrador. '
-        "Aclara que es editable y que no se ha creado nada. Para informes no incluyas un borrador.\n\n"
+        "Aclara que es editable y que no se ha creado nada. Para informes no incluyas un borrador.\n"
+        'Si hay un archivo en vista previa ("staged_spreadsheet_import") y el usuario pide ajustar precios o calcular precios '
+        'mayor/detal sobre el archivo, puedes incluir "price_adjustment" (con "target": "all"|"existing"|"new", y porcentajes '
+        'como "detal_pct", "mayor_pct", "cost_pct" o "mayor_from_detal_discount_pct") o "item_updates" '
+        '([{"item_code":"SKU","detal_price":12.5,"mayor_price":10.0,"cost_rate":8.0}]). '
+        "Aclara que los cambios se muestran en la tabla de vista previa para revisión y no se guardan hasta confirmar.\n\n"
         "Datos empresariales minimizados:\n"
         + json.dumps(context, ensure_ascii=False, default=str)[:30000]
         + "\n\nDocumentación pública permitida del repositorio:\n"
@@ -385,10 +394,11 @@ def ask_assistant(
     seller: str = "",
     warehouse: str = "",
     company: str = "",
+    import_token: str = "",
 ) -> dict:
     import frappe
 
-    _require_assistant_admin()
+    user = _require_assistant_admin()
     settings, provider, model, key = _get_provider_config()
     if not bool(int(settings.get("assistant_enabled") or 0)):
         frappe.throw("Habilita el Asistente CIMA en Cima VE Settings antes de usarlo.")
@@ -419,6 +429,30 @@ def ask_assistant(
         frappe.throw("La compañía seleccionada no está disponible.")
 
     context = _build_business_context(from_date, to_date, str(seller or "").strip(), warehouse, company, question)
+    staged_preview = None
+    clean_import_token = str(import_token or "").strip()
+    if clean_import_token and re.fullmatch(r"[A-Za-z0-9_-]{20,100}", clean_import_token):
+        cached = frappe.cache().get_value(f"cima_ai_inventory_preview:{user}:{clean_import_token}")
+        if isinstance(cached, dict) and cached.get("user") == user and cached.get("preview_rows"):
+            staged_preview = cached
+            context["staged_spreadsheet_import"] = {
+                "row_count": len(cached["preview_rows"]),
+                "rows": [
+                    {
+                        "item_code": r.get("item_code"),
+                        "item_name": r.get("item_name"),
+                        "action": r.get("action"),
+                        "current_detal_price": r.get("current_detal_price"),
+                        "detal_price": r.get("detal_price"),
+                        "current_mayor_price": r.get("current_mayor_price"),
+                        "mayor_price": r.get("mayor_price"),
+                        "current_cost_rate": r.get("current_cost_rate"),
+                        "cost_rate": r.get("cost_rate"),
+                    }
+                    for r in cached["preview_rows"][:60]
+                ],
+            }
+
     include_repository = bool(int(settings.get("assistant_include_repository") if settings.get("assistant_include_repository") is not None else 1))
     repository_context = fetch_public_repository_context() if include_repository else ""
     system_prompt = _assistant_system_prompt(context, repository_context)
@@ -427,7 +461,25 @@ def ask_assistant(
         answer, used_model = _call_provider_with_fallback(provider, model, key, system_prompt, messages, fallback_model)
     except ValueError as exc:
         frappe.throw(str(exc))
-    return {**parse_assistant_response(answer), "scope": context["scope"], "model": used_model}
+    parsed = parse_assistant_response(answer)
+    result = {**parsed, "scope": context["scope"], "model": used_model}
+
+    if staged_preview and staged_preview.get("raw_rows") and (parsed.get("price_adjustment") or parsed.get("item_updates")):
+        existing_items = _fetch_existing_items_map(staged_preview["raw_rows"])
+        adjusted_rows = apply_ai_price_adjustments(
+            staged_preview["raw_rows"],
+            adjustment=parsed.get("price_adjustment"),
+            item_updates=parsed.get("item_updates"),
+            existing_items=existing_items,
+        )
+        result["updated_import_preview"] = _build_preview_and_cache(
+            user=user,
+            rows=adjusted_rows,
+            warehouse=staged_preview.get("warehouse", ""),
+            existing_items=existing_items,
+            ai_mapped_columns=staged_preview.get("ai_mapped_columns"),
+        )
+    return result
 
 
 @whitelist()
@@ -451,6 +503,133 @@ def test_assistant_connection() -> dict:
     return {"ok": True, "provider": provider, "model": model, "message": response[:200]}
 
 
+def _fetch_existing_items_map(rows: list[dict]) -> dict[str, dict]:
+    import frappe
+    from cima_ve.api.products import _resolve_price_lists
+    from cima_ve.services.product_service import normalize_item_code
+
+    candidates = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = normalize_item_code(row.get("item_code"), row.get("item_name"))
+        if code:
+            candidates.append(code)
+    candidates = list(dict.fromkeys(candidates))
+    if not candidates:
+        return {}
+
+    items = frappe.get_all(
+        "Item",
+        filters={"item_code": ["in", candidates]},
+        fields=["item_code", "item_name", "item_group", "stock_uom", "standard_rate", "valuation_rate"],
+        limit_page_length=len(candidates) + 10,
+    )
+    if not items:
+        return {}
+
+    detal_pl, mayor_pl = _resolve_price_lists()
+    price_lists = [pl for pl in (detal_pl, mayor_pl) if pl]
+    item_codes = [item["item_code"] for item in items]
+    price_map: dict[tuple[str, str], float] = {}
+    if price_lists and item_codes:
+        prices = frappe.get_all(
+            "Item Price",
+            filters={"item_code": ["in", item_codes], "selling": 1, "price_list": ["in", price_lists]},
+            fields=["item_code", "price_list", "price_list_rate"],
+            limit_page_length=len(item_codes) * 4,
+        )
+        for p in prices:
+            price_map[(p["item_code"], p["price_list"])] = round(float(p.get("price_list_rate") or 0), 2)
+
+    existing_map: dict[str, dict] = {}
+    for item in items:
+        code = item["item_code"]
+        detal_val = price_map.get((code, detal_pl)) if detal_pl else None
+        if detal_val is None and item.get("standard_rate"):
+            detal_val = round(float(item["standard_rate"]), 2)
+        mayor_val = price_map.get((code, mayor_pl)) if mayor_pl else None
+        cost_val = round(float(item.get("valuation_rate") or 0), 2)
+        existing_map[code.upper()] = {
+            "item_code": code,
+            "item_name": item.get("item_name") or code,
+            "item_group": item.get("item_group") or "",
+            "stock_uom": item.get("stock_uom") or "",
+            "detal_price": detal_val,
+            "mayor_price": mayor_val,
+            "cost_rate": cost_val,
+        }
+    return existing_map
+
+
+def _build_preview_and_cache(
+    user: str,
+    rows: list[dict],
+    warehouse: str,
+    existing_items: dict[str, dict],
+    ai_mapped_columns: dict[str, str] | None = None,
+) -> dict:
+    import frappe
+    from cima_ve.api.products import get_product_loader_bootstrap
+    from cima_ve.services.product_service import normalize_item_code
+
+    product_setup = get_product_loader_bootstrap()
+    prepared_rows = []
+    for raw_row in rows:
+        row = dict(raw_row or {})
+        code = normalize_item_code(row.get("item_code"), row.get("item_name"))
+        is_existing = bool(code and code.upper() in existing_items)
+        row_errors = []
+        if not is_existing:
+            row["warehouse"] = warehouse or ""
+            if not row.get("item_group"):
+                row["item_group"] = product_setup.get("default_item_group") or "Products"
+            if not row.get("stock_uom"):
+                row["stock_uom"] = product_setup.get("default_uom") or "Nos"
+            if not frappe.db.exists("Item Group", row["item_group"]):
+                row_errors.append(f"La categoría {row['item_group']} no existe.")
+            if not frappe.db.exists("UOM", row["stock_uom"]):
+                row_errors.append(f"La unidad {row['stock_uom']} no existe.")
+        row["_import_errors"] = row_errors
+        prepared_rows.append(row)
+
+    preview = prepare_inventory_import(
+        prepared_rows,
+        warehouse,
+        existing_items=existing_items,
+        allow_price_updates=True,
+    )
+
+    token = ""
+    if not preview["has_errors"]:
+        token = frappe.generate_hash(length=40)
+        cache_key = f"cima_ai_inventory_preview:{user}:{token}"
+        frappe.cache().set_value(
+            cache_key,
+            {
+                "user": user,
+                "warehouse": warehouse,
+                "raw_rows": prepared_rows,
+                "products": preview["products"],
+                "updates": preview["updates"],
+                "operations": preview["operations"],
+                "preview_rows": preview["rows"],
+                "ai_mapped_columns": ai_mapped_columns or {},
+            },
+            expires_in_sec=600,
+        )
+    return {
+        "rows": preview["rows"],
+        "row_count": len(preview["rows"]),
+        "create_count": preview["create_count"],
+        "update_count": preview["update_count"],
+        "ai_mapped_columns": ai_mapped_columns or {},
+        "can_confirm": bool(token),
+        "token": token,
+        "expires_in_seconds": 600 if token else 0,
+    }
+
+
 @whitelist()
 def preview_inventory_import(filename: str, file_data_base64: str, warehouse: str = "") -> dict:
     import frappe
@@ -465,51 +644,32 @@ def preview_inventory_import(filename: str, file_data_base64: str, warehouse: st
         )
         if not valid_warehouse:
             frappe.throw("El almacén seleccionado no está disponible.")
-    try:
-        rows = parse_inventory_upload(filename, file_data_base64)
-        from cima_ve.api.products import get_product_loader_bootstrap
 
-        product_setup = get_product_loader_bootstrap()
-        for row in rows:
-            row["warehouse"] = warehouse or ""
-            if not row.get("item_group"):
-                row["item_group"] = product_setup.get("default_item_group") or "Products"
-            if not row.get("stock_uom"):
-                row["stock_uom"] = product_setup.get("default_uom") or "Nos"
-            row_errors = []
-            if not frappe.db.exists("Item Group", row["item_group"]):
-                row_errors.append(f"La categoría {row['item_group']} no existe.")
-            if not frappe.db.exists("UOM", row["stock_uom"]):
-                row_errors.append(f"La unidad {row['stock_uom']} no existe.")
-            row["_import_errors"] = row_errors
-        preview = prepare_inventory_import(rows, warehouse)
+    def _ai_column_mapper(headers: list[str], sample_rows: list[dict]) -> dict[str, str]:
+        settings, provider, model, key = _get_provider_config()
+        if not bool(int(settings.get("assistant_enabled") or 0)) or not key:
+            return {}
+        system_prompt, messages = build_column_mapping_prompt(headers, sample_rows)
+        fallback_model = str(settings.get("assistant_fallback_model") or "").strip()
+        answer, _ = _call_provider_with_fallback(provider, model, key, system_prompt, messages, fallback_model)
+        return parse_column_mapping_response(answer, headers)
+
+    try:
+        rows, ai_mapped_columns = parse_inventory_upload_with_mapping(
+            filename,
+            file_data_base64,
+            ai_column_mapper=_ai_column_mapper,
+        )
+        existing_items = _fetch_existing_items_map(rows)
+        return _build_preview_and_cache(
+            user=user,
+            rows=rows,
+            warehouse=warehouse,
+            existing_items=existing_items,
+            ai_mapped_columns=ai_mapped_columns,
+        )
     except ValueError as exc:
         frappe.throw(str(exc))
-
-    existing_codes = {
-        product["item_code"]
-        for product in preview["products"]
-        if frappe.db.exists("Item", product["item_code"])
-    }
-    if existing_codes:
-        preview = prepare_inventory_import(rows, warehouse, existing_item_codes=existing_codes)
-
-    token = ""
-    if not preview["has_errors"]:
-        token = frappe.generate_hash(length=40)
-        cache_key = f"cima_ai_inventory_preview:{user}:{token}"
-        frappe.cache().set_value(
-            cache_key,
-            {"user": user, "products": preview["products"]},
-            expires_in_sec=600,
-        )
-    return {
-        "rows": preview["rows"],
-        "row_count": len(preview["rows"]),
-        "can_confirm": bool(token),
-        "token": token,
-        "expires_in_seconds": 600 if token else 0,
-    }
 
 
 @whitelist(methods=["POST"])
@@ -524,27 +684,55 @@ def confirm_inventory_import(token: str) -> dict:
     cache = frappe.cache()
     with cache.lock(cache.make_key(f"{cache_key}:consume"), timeout=10, blocking_timeout=3):
         preview = cache.get_value(cache_key)
-        if not isinstance(preview, dict) or preview.get("user") != user or not preview.get("products"):
+        operations = preview.get("operations") if isinstance(preview, dict) else None
+        if not operations and isinstance(preview, dict) and preview.get("products"):
+            operations = [{"action": "create", "payload": p} for p in preview["products"]]
+        if not isinstance(preview, dict) or preview.get("user") != user or not operations:
             frappe.throw("La vista previa venció o ya fue utilizada. Carga nuevamente el archivo.")
         cache.delete_value(cache_key)
 
-    products = preview["products"]
-    for product in products:
-        if frappe.db.exists("Item", product["item_code"]):
-            frappe.throw(f"El código {product['item_code']} ya existe. Revisa el archivo y genera una nueva vista previa.")
+    from cima_ve.api.products import create_quick_product, update_product_quick_details
 
-    from cima_ve.api.products import create_quick_product
+    for op in operations:
+        code = op["payload"]["item_code"]
+        exists = bool(frappe.db.exists("Item", code))
+        if op["action"] == "create" and exists:
+            frappe.throw(f"El código {code} ya existe. Revisa el archivo y genera una nueva vista previa.")
+        if op["action"] == "update_price" and not exists:
+            frappe.throw(f"El código {code} ya no existe. Revisa el archivo y genera una nueva vista previa.")
 
-    created = [create_quick_product(**product) for product in products]
+    results = []
+    created_count = 0
+    updated_count = 0
+    for op in operations:
+        payload = op["payload"]
+        if op["action"] == "update_price":
+            res = update_product_quick_details(**payload)
+            updated_count += 1
+            results.append(
+                {
+                    "action": "update_price",
+                    "item_code": res["item_code"],
+                    "item_name": frappe.db.get_value("Item", res["item_code"], "item_name") or res["item_code"],
+                    "stock_entry": "",
+                }
+            )
+        else:
+            res = create_quick_product(**payload)
+            created_count += 1
+            results.append(
+                {
+                    "action": "create",
+                    "item_code": res["item_code"],
+                    "item_name": res["item_name"],
+                    "stock_entry": res.get("stock_entry", ""),
+                }
+            )
+
     return {
         "ok": True,
-        "items_count": len(created),
-        "items": [
-            {
-                "item_code": item["item_code"],
-                "item_name": item["item_name"],
-                "stock_entry": item.get("stock_entry", ""),
-            }
-            for item in created
-        ],
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "items_count": len(results),
+        "items": results,
     }

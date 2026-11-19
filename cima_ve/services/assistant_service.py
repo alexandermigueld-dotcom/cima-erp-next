@@ -37,14 +37,14 @@ _PROVIDER_URLS = {
 _REPOSITORY_BASE_URL = "https://raw.githubusercontent.com/josephnowak/cima-erp-next/main"
 _REPOSITORY_FILES = ("README.md", "CONTEXT.md", "AGENTS.md")
 _HEADER_ALIASES = {
-    "item_name": {"item_name", "product_name", "name", "nombre", "producto", "nombre_producto"},
-    "item_code": {"item_code", "sku", "code", "codigo", "codigo_producto"},
+    "item_name": {"item_name", "product_name", "name", "nombre", "producto", "nombre_producto", "articulo", "nombre_articulo"},
+    "item_code": {"item_code", "sku", "code", "codigo", "codigo_producto", "referencia", "ref", "cod"},
     "item_group": {"item_group", "category", "categoria", "grupo", "grupo_articulo"},
     "stock_uom": {"stock_uom", "uom", "unit", "unidad", "unidad_medida"},
-    "cost_rate": {"cost_rate", "cost", "costo", "costo_unitario"},
-    "detal_price": {"detal_price", "retail_price", "price_retail", "precio_detal", "precio"},
-    "mayor_price": {"mayor_price", "wholesale_price", "precio_mayor"},
-    "initial_qty": {"initial_qty", "qty", "quantity", "stock", "cantidad", "cantidad_inicial"},
+    "cost_rate": {"cost_rate", "cost", "costo", "costo_unitario", "costo_usd"},
+    "detal_price": {"detal_price", "retail_price", "price_retail", "precio_detal", "precio", "pvp", "precio_venta", "precio_detal_usd"},
+    "mayor_price": {"mayor_price", "wholesale_price", "precio_mayor", "precio_mayorista", "mayorista", "precio_mayor_usd"},
+    "initial_qty": {"initial_qty", "qty", "quantity", "stock", "cantidad", "cantidad_inicial", "existencia"},
     "warehouse": {"warehouse", "almacen", "almacen_inicial"},
     "description": {"description", "descripcion"},
     "show_in_website": {"show_in_website", "published", "publicar", "visible_web"},
@@ -56,14 +56,58 @@ def _normalize_header(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
 
 
-def _canonicalize_row(row: dict) -> dict:
+def _canonicalize_row(row: dict, extra_mapping: dict[str, str] | None = None) -> dict:
     aliases = {alias: key for key, values in _HEADER_ALIASES.items() for alias in values}
+    normalized_extra = {_normalize_header(k): v for k, v in (extra_mapping or {}).items() if v in _HEADER_ALIASES}
     cleaned = {}
     for key, value in row.items():
-        canonical = aliases.get(_normalize_header(key))
+        norm_key = _normalize_header(key)
+        canonical = aliases.get(norm_key) or normalized_extra.get(norm_key)
         if canonical:
             cleaned[canonical] = str(value or "").strip()
     return cleaned
+
+
+def build_column_mapping_prompt(headers: list[str], sample_rows: list[dict]) -> tuple[str, list[dict]]:
+    allowed_fields = sorted(_HEADER_ALIASES.keys())
+    compact_samples = [
+        {str(k)[:60]: str(v or "")[:80] for k, v in row.items() if str(k).strip()}
+        for row in sample_rows[:3]
+    ]
+    system_prompt = (
+        "Eres un asistente que mapea columnas de un archivo CSV/Excel de productos y precios en ERPNext. "
+        "Responde ÚNICAMENTE con un objeto JSON válido: {\"mapping\": {\"NombreColumnaOriginal\": \"campo_canonico\"}}. "
+        f"Los campos canónicos permitidos son exclusivamente: {', '.join(allowed_fields)}. "
+        "Si una columna no corresponde a ningún campo permitido, omítela. No inventes columnas."
+    )
+    user_msg = json.dumps({"headers": headers[:40], "sample_rows": compact_samples}, ensure_ascii=False)
+    return system_prompt, [{"role": "user", "content": user_msg}]
+
+
+def parse_column_mapping_response(text: str, allowed_headers: list[str]) -> dict[str, str]:
+    raw = str(text or "").strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw, re.IGNORECASE | re.DOTALL)
+    try:
+        parsed = json.loads(fenced[1] if fenced else raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    mapping = parsed.get("mapping") if isinstance(parsed.get("mapping"), dict) else parsed
+    if not isinstance(mapping, dict):
+        return {}
+    allowed_by_norm = {_normalize_header(h): h for h in allowed_headers if str(h).strip()}
+    result: dict[str, str] = {}
+    for source_col, target_field in mapping.items():
+        if not isinstance(source_col, str) or not isinstance(target_field, str):
+            continue
+        target = target_field.strip()
+        if target not in _HEADER_ALIASES:
+            continue
+        matched_header = allowed_by_norm.get(_normalize_header(source_col))
+        if matched_header:
+            result[matched_header] = target
+    return result
 
 
 def _column_index(cell_reference: str) -> int:
@@ -159,14 +203,18 @@ def _parse_xlsx(content: bytes) -> list[dict]:
     for row in raw_rows[1:]:
         record = {str(headers.get(column, "")): value for column, value in row.items()}
         if any(str(value).strip() for value in record.values()):
-            records.append(_canonicalize_row(record))
+            records.append(record)
             if len(records) > MAX_IMPORT_ROWS:
                 raise ValueError(f"El archivo supera el máximo de {MAX_IMPORT_ROWS} productos por carga.")
     return records
 
 
-def parse_inventory_upload(filename: str, file_data_base64: str) -> list[dict]:
-    """Decode a bounded CSV/XLSX upload into allowlisted product fields only."""
+def parse_inventory_upload_with_mapping(
+    filename: str,
+    file_data_base64: str,
+    ai_column_mapper: Callable[[list[str], list[dict]], dict[str, str]] | None = None,
+) -> tuple[list[dict], dict[str, str]]:
+    """Decode a bounded CSV/XLSX upload into allowlisted product fields, optionally using AI for unknown headers."""
     extension = str(filename or "").rsplit(".", 1)[-1].lower()
     if extension not in {"csv", "xlsx"}:
         raise ValueError("Usa un archivo CSV o XLSX.")
@@ -197,44 +245,170 @@ def parse_inventory_upload(filename: str, file_data_base64: str) -> list[dict]:
             reader = csv.DictReader(io.StringIO(text, newline=""), dialect=dialect)
             if not reader.fieldnames:
                 raise ValueError("El CSV debe incluir encabezados en la primera fila.")
-            rows = []
+            raw_records = []
             for row in reader:
                 if any(str(value or "").strip() for value in row.values()):
-                    rows.append(_canonicalize_row(row))
-                    if len(rows) > MAX_IMPORT_ROWS:
+                    raw_records.append(dict(row))
+                    if len(raw_records) > MAX_IMPORT_ROWS:
                         raise ValueError(f"El archivo supera el máximo de {MAX_IMPORT_ROWS} productos por carga.")
         except csv.Error as exc:
             raise ValueError("No se pudo interpretar el CSV.") from exc
     else:
         try:
-            rows = _parse_xlsx(content)
+            raw_records = _parse_xlsx(content)
         except (ElementTree.ParseError, KeyError, RuntimeError, zipfile.BadZipFile) as exc:
             raise ValueError("El archivo XLSX está dañado o no es válido.") from exc
 
-    if not rows:
+    if not raw_records:
         raise ValueError("El archivo no contiene filas de productos.")
-    if len(rows) > MAX_IMPORT_ROWS:
+    if len(raw_records) > MAX_IMPORT_ROWS:
         raise ValueError(f"El archivo supera el máximo de {MAX_IMPORT_ROWS} productos por carga.")
+
+    aliases = {alias: key for key, values in _HEADER_ALIASES.items() for alias in values}
+    all_headers = [str(k) for k in raw_records[0].keys() if str(k or "").strip()]
+    unmapped_headers = [h for h in all_headers if _normalize_header(h) not in aliases]
+    mapped_fields = {aliases[_normalize_header(h)] for h in all_headers if _normalize_header(h) in aliases}
+
+    ai_mapping: dict[str, str] = {}
+    needs_ai_mapping = bool(unmapped_headers) and (
+        not mapped_fields.intersection({"item_code", "item_name"})
+        or not mapped_fields.intersection({"detal_price", "mayor_price", "cost_rate"})
+    )
+    if needs_ai_mapping and ai_column_mapper is not None:
+        try:
+            candidate = ai_column_mapper(unmapped_headers, raw_records[:3]) or {}
+            ai_mapping = {
+                k: v for k, v in candidate.items()
+                if k in unmapped_headers and v in _HEADER_ALIASES and v not in mapped_fields
+            }
+        except Exception:
+            ai_mapping = {}
+
+    rows = [_canonicalize_row(record, extra_mapping=ai_mapping) for record in raw_records]
+    return rows, ai_mapping
+
+
+def parse_inventory_upload(filename: str, file_data_base64: str) -> list[dict]:
+    """Decode a bounded CSV/XLSX upload into allowlisted product fields only."""
+    rows, _ = parse_inventory_upload_with_mapping(filename, file_data_base64)
     return rows
 
 
-def prepare_inventory_import(rows: list[dict], warehouse: str = "", existing_item_codes: set[str] | None = None) -> dict:
-    """Validate import rows and detect duplicates without performing writes."""
-    from cima_ve.services.product_service import validate_new_product_input
+def _parse_optional_non_negative(value: object, field_label: str) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        num = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_label} debe ser un número válido.") from exc
+    if num < 0:
+        raise ValueError(f"{field_label} no puede ser negativo.")
+    return round(num, 2)
+
+
+def prepare_inventory_import(
+    rows: list[dict],
+    warehouse: str = "",
+    existing_item_codes: set[str] | None = None,
+    existing_items: dict[str, dict] | None = None,
+    allow_price_updates: bool = False,
+) -> dict:
+    """Validate import rows for creating new products or updating prices of existing ones."""
+    from cima_ve.services.product_service import normalize_item_code, validate_new_product_input
 
     if not isinstance(rows, list) or not rows or len(rows) > MAX_IMPORT_ROWS:
         raise ValueError(f"La carga debe incluir entre 1 y {MAX_IMPORT_ROWS} productos.")
 
-    existing = {str(code).strip().upper() for code in (existing_item_codes or set())}
+    existing_map: dict[str, dict] = {}
+    for code in (existing_item_codes or set()):
+        key = str(code).strip().upper()
+        if key:
+            existing_map[key] = {"item_code": str(code).strip()}
+    for code, info in (existing_items or {}).items():
+        key = str(code).strip().upper()
+        if key:
+            existing_map[key] = dict(info or {"item_code": str(code).strip()})
+
     seen = set()
     products = []
+    updates = []
+    operations = []
     preview_rows = []
     has_errors = False
+    create_count = 0
+    update_count = 0
+
     for index, row in enumerate(rows, start=2):
         preset_errors = (row or {}).get("_import_errors", []) if isinstance(row, dict) else []
         errors = [str(error) for error in preset_errors if error]
+        payload = dict(row or {})
+        raw_code = str(payload.get("item_code") or "").strip()
+        raw_name = str(payload.get("item_name") or "").strip()
+        candidate_code = normalize_item_code(raw_code, raw_name)
+        code_key = candidate_code.upper()
+        existing_info = existing_map.get(code_key) if code_key else None
+
+        if existing_info is not None and allow_price_updates:
+            action = "update_price"
+            cleaned = None
+            try:
+                if code_key in seen:
+                    errors.append("El código está repetido en el archivo.")
+                seen.add(code_key)
+                detal_price = _parse_optional_non_negative(payload.get("detal_price"), "El precio Detal")
+                mayor_price = _parse_optional_non_negative(payload.get("mayor_price"), "El precio Mayor")
+                cost_rate = _parse_optional_non_negative(payload.get("cost_rate"), "El costo unitario")
+                if detal_price is None and mayor_price is None and cost_rate is None:
+                    errors.append("Indica al menos un precio (Detal, Mayor o Costo) para actualizar el producto existente.")
+                elif (detal_price is not None and detal_price <= 0) or (mayor_price is not None and mayor_price <= 0):
+                    errors.append("Los precios Detal y Mayor para actualizar deben ser mayores a 0.")
+                if not errors:
+                    update_payload = {
+                        "item_code": existing_info.get("item_code") or candidate_code,
+                        "detal_price": detal_price,
+                        "mayor_price": mayor_price,
+                        "cost_rate": cost_rate,
+                    }
+                    updates.append(update_payload)
+                    operations.append({"action": "update_price", "payload": update_payload})
+                    update_count += 1
+                    cleaned = {
+                        "item_code": update_payload["item_code"],
+                        "item_name": existing_info.get("item_name") or raw_name or update_payload["item_code"],
+                        "detal_price": detal_price,
+                        "mayor_price": mayor_price,
+                        "cost_rate": cost_rate,
+                    }
+            except (TypeError, ValueError) as exc:
+                errors.append(str(exc))
+
+            if errors:
+                has_errors = True
+            preview_rows.append(
+                {
+                    "row": index,
+                    "action": action,
+                    "item_code": cleaned["item_code"] if cleaned else (existing_info.get("item_code") or raw_code or candidate_code),
+                    "item_name": cleaned["item_name"] if cleaned else (existing_info.get("item_name") or raw_name),
+                    "description": str(payload.get("description") or ""),
+                    "item_group": str(existing_info.get("item_group") or payload.get("item_group") or ""),
+                    "stock_uom": str(existing_info.get("stock_uom") or payload.get("stock_uom") or ""),
+                    "current_cost_rate": existing_info.get("cost_rate"),
+                    "current_detal_price": existing_info.get("detal_price"),
+                    "current_mayor_price": existing_info.get("mayor_price"),
+                    "cost_rate": cleaned["cost_rate"] if cleaned else payload.get("cost_rate", ""),
+                    "detal_price": cleaned["detal_price"] if cleaned else payload.get("detal_price", ""),
+                    "mayor_price": cleaned["mayor_price"] if cleaned else payload.get("mayor_price", ""),
+                    "initial_qty": 0,
+                    "warehouse": "",
+                    "show_in_website": False,
+                    "errors": errors,
+                }
+            )
+            continue
+
+        action = "create"
         try:
-            payload = dict(row or {})
             payload["warehouse"] = warehouse or payload.get("warehouse", "")
             if payload.get("show_in_website") in (None, ""):
                 payload["show_in_website"] = 0
@@ -242,7 +416,7 @@ def prepare_inventory_import(rows: list[dict], warehouse: str = "", existing_ite
             code_key = cleaned["item_code"].upper()
             if code_key in seen:
                 errors.append("El código está repetido en el archivo.")
-            elif code_key in existing:
+            elif code_key in existing_map:
                 errors.append("El código del producto ya existe.")
             seen.add(code_key)
         except (TypeError, ValueError) as exc:
@@ -253,14 +427,20 @@ def prepare_inventory_import(rows: list[dict], warehouse: str = "", existing_ite
             has_errors = True
         else:
             products.append(cleaned)
+            operations.append({"action": "create", "payload": cleaned})
+            create_count += 1
         preview_rows.append(
             {
                 "row": index,
+                "action": action,
                 "item_code": cleaned.get("item_code", "") if cleaned else str((row or {}).get("item_code", "")),
                 "item_name": cleaned.get("item_name", "") if cleaned else str((row or {}).get("item_name", "")),
                 "description": cleaned["description"] if cleaned else str((row or {}).get("description", "")),
                 "item_group": cleaned.get("item_group", "") if cleaned else str((row or {}).get("item_group", "")),
                 "stock_uom": cleaned.get("stock_uom", "") if cleaned else str((row or {}).get("stock_uom", "")),
+                "current_cost_rate": None,
+                "current_detal_price": None,
+                "current_mayor_price": None,
                 "cost_rate": cleaned.get("cost_rate", 0) if cleaned else (row or {}).get("cost_rate", ""),
                 "detal_price": cleaned.get("detal_price", 0) if cleaned else (row or {}).get("detal_price", ""),
                 "mayor_price": cleaned.get("mayor_price", 0) if cleaned else (row or {}).get("mayor_price", ""),
@@ -271,11 +451,96 @@ def prepare_inventory_import(rows: list[dict], warehouse: str = "", existing_ite
             }
         )
 
-    return {"rows": preview_rows, "products": products if not has_errors else [], "has_errors": has_errors}
+    return {
+        "rows": preview_rows,
+        "products": products if not has_errors else [],
+        "updates": updates if not has_errors else [],
+        "operations": operations if not has_errors else [],
+        "create_count": create_count if not has_errors else 0,
+        "update_count": update_count if not has_errors else 0,
+        "has_errors": has_errors,
+    }
+
+
+def apply_ai_price_adjustments(
+    rows: list[dict],
+    adjustment: dict | None = None,
+    item_updates: list[dict] | None = None,
+    existing_items: dict[str, dict] | None = None,
+) -> list[dict]:
+    """Apply bounded AI-suggested price adjustments to staged import rows without writing to ERPNext."""
+    from cima_ve.services.product_service import normalize_item_code
+
+    existing_map = {str(k).strip().upper(): dict(v or {}) for k, v in (existing_items or {}).items()}
+    updates_by_code: dict[str, dict] = {}
+    for entry in (item_updates or []):
+        if not isinstance(entry, dict):
+            continue
+        code = normalize_item_code(entry.get("item_code"), "")
+        if code:
+            updates_by_code[code.upper()] = entry
+
+    target = str((adjustment or {}).get("target") or "all").strip().lower()
+    if target not in {"all", "existing", "new"}:
+        target = "all"
+
+    def _pct(key: str) -> float | None:
+        val = (adjustment or {}).get(key)
+        if val in (None, ""):
+            return None
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            return None
+        return max(-95.0, min(500.0, num))
+
+    detal_pct = _pct("detal_pct")
+    mayor_pct = _pct("mayor_pct")
+    cost_pct = _pct("cost_pct")
+    mayor_from_detal_discount_pct = _pct("mayor_from_detal_discount_pct")
+
+    adjusted_rows: list[dict] = []
+    for row in rows:
+        item = dict(row or {})
+        code = normalize_item_code(item.get("item_code"), item.get("item_name"))
+        code_key = code.upper()
+        is_existing = code_key in existing_map
+        existing_info = existing_map.get(code_key, {})
+
+        if adjustment and (target == "all" or (target == "existing" and is_existing) or (target == "new" and not is_existing)):
+            for field, pct in (("detal_price", detal_pct), ("mayor_price", mayor_pct), ("cost_rate", cost_pct)):
+                if pct is None:
+                    continue
+                base_val = _parse_optional_non_negative(item.get(field), field)
+                if base_val is None and is_existing:
+                    base_val = _parse_optional_non_negative(existing_info.get(field), field)
+                if base_val is not None and base_val >= 0:
+                    item[field] = str(round(max(0.0, base_val * (1.0 + pct / 100.0)), 2))
+
+            if mayor_from_detal_discount_pct is not None:
+                detal_val = _parse_optional_non_negative(item.get("detal_price"), "detal_price")
+                if detal_val is None and is_existing:
+                    detal_val = _parse_optional_non_negative(existing_info.get("detal_price"), "detal_price")
+                if detal_val is not None and detal_val > 0:
+                    factor = max(0.0, 1.0 - mayor_from_detal_discount_pct / 100.0)
+                    item["mayor_price"] = str(round(detal_val * factor, 2))
+
+        if code_key in updates_by_code:
+            specific = updates_by_code[code_key]
+            for field in ("detal_price", "mayor_price", "cost_rate"):
+                if specific.get(field) not in (None, ""):
+                    try:
+                        num = round(max(0.0, float(specific[field])), 2)
+                        item[field] = str(num)
+                    except (TypeError, ValueError):
+                        pass
+
+        adjusted_rows.append(item)
+    return adjusted_rows
 
 
 def parse_assistant_response(text: str) -> dict:
-    """Accept an optional product proposal but never pass through operational fields."""
+    """Accept an optional product proposal or staged price adjustment, never operational writes."""
     text = text.strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL)
     try:
@@ -285,7 +550,7 @@ def parse_assistant_response(text: str) -> dict:
     if not isinstance(response, dict) or not isinstance(response.get("answer"), str) or not response["answer"].strip():
         return {"answer": text}
 
-    result = {"answer": response["answer"].strip()}
+    result: dict = {"answer": response["answer"].strip()}
     raw_draft = response.get("product_draft")
     if isinstance(raw_draft, dict):
         draft = {
@@ -295,6 +560,38 @@ def parse_assistant_response(text: str) -> dict:
         }
         if draft.get("item_name"):
             result["product_draft"] = draft
+
+    raw_adj = response.get("price_adjustment")
+    if isinstance(raw_adj, dict):
+        adj: dict = {}
+        target = str(raw_adj.get("target") or "all").strip().lower()
+        if target in {"all", "existing", "new"}:
+            adj["target"] = target
+        for key in ("detal_pct", "mayor_pct", "cost_pct", "mayor_from_detal_discount_pct"):
+            if isinstance(raw_adj.get(key), (int, float)) and not isinstance(raw_adj.get(key), bool):
+                adj[key] = float(raw_adj[key])
+        if any(k in adj for k in ("detal_pct", "mayor_pct", "cost_pct", "mayor_from_detal_discount_pct")):
+            result["price_adjustment"] = adj
+
+    raw_updates = response.get("item_updates")
+    if isinstance(raw_updates, list):
+        safe_updates = []
+        for entry in raw_updates[:MAX_IMPORT_ROWS]:
+            if not isinstance(entry, dict):
+                continue
+            code = str(entry.get("item_code") or "").strip()[:60]
+            if not code:
+                continue
+            safe_entry: dict = {"item_code": code}
+            for field in ("detal_price", "mayor_price", "cost_rate"):
+                val = entry.get(field)
+                if isinstance(val, (int, float)) and not isinstance(val, bool) and val >= 0:
+                    safe_entry[field] = round(float(val), 2)
+            if len(safe_entry) > 1:
+                safe_updates.append(safe_entry)
+        if safe_updates:
+            result["item_updates"] = safe_updates
+
     return result
 
 
