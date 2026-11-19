@@ -957,7 +957,7 @@ def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
 
 
 @whitelist()
-def purge_cancelled_delivery_notes() -> dict:
+def purge_cancelled_delivery_notes(include_orphan_sales_docs: bool = False) -> dict:
     """Elimina permanentemente Notas de Entrega ya canceladas (docstatus=2) y sus facturas/pagos cancelados vinculados."""
     import frappe
     from cima_ve.services.delivery_note_service import parse_payment_history
@@ -973,11 +973,13 @@ def purge_cancelled_delivery_notes() -> dict:
 
     deleted_pes: list[str] = []
     deleted_invoices: list[str] = []
+    deleted_orders: list[str] = []
     deleted_dns: list[str] = []
     errors: list[dict] = []
 
     seen_pes: set[str] = set()
     seen_invoices: set[str] = set()
+    seen_orders: set[str] = set()
 
     for row in cancelled_dns or []:
         hist_raw = row.get("ve_ne_historial_pagos") or ""
@@ -1012,10 +1014,33 @@ def purge_cancelled_delivery_notes() -> dict:
         except Exception as exc:
             errors.append({"doctype": "Delivery Note", "name": dn_name, "error": str(exc)})
 
+    if include_orphan_sales_docs and str(include_orphan_sales_docs).lower() not in {"0", "false", "no"}:
+        for dt, seen, bucket in [
+            ("Payment Entry", seen_pes, deleted_pes),
+            ("Sales Invoice", seen_invoices, deleted_invoices),
+            ("Sales Order", seen_orders, deleted_orders),
+        ]:
+            cancelled_rows = frappe.get_all(
+                dt,
+                filters={"docstatus": 2},
+                pluck="name",
+                limit_page_length=500,
+            )
+            for doc_name in cancelled_rows or []:
+                if doc_name in seen:
+                    continue
+                seen.add(doc_name)
+                try:
+                    frappe.delete_doc(dt, doc_name, force=True, ignore_permissions=True)
+                    bucket.append(doc_name)
+                except Exception as exc:
+                    errors.append({"doctype": dt, "name": doc_name, "error": str(exc)})
+
     return {
         "ok": len(errors) == 0,
         "deleted_delivery_notes": deleted_dns,
         "deleted_invoices": deleted_invoices,
+        "deleted_sales_orders": deleted_orders,
         "deleted_payment_entries": deleted_pes,
         "errors": errors,
     }
@@ -1162,7 +1187,7 @@ def _mark_delivery_note_paid_impl(
 
     is_cash = is_cash_payment_method(clean_method)
     clean_reference = "" if is_cash else (reference or "").strip()
-    clean_screenshot = "" if is_cash else (screenshot_url or "").strip()
+    clean_screenshot = (screenshot_url or "").strip()
 
     requested_amount: float | None = None
     if paid_amount not in (None, ""):
@@ -1308,6 +1333,8 @@ def _mark_delivery_note_paid_impl(
     dn.db_set("ve_ne_aplica_iva", 1 if iva_flag else 0)
     dn.db_set("ve_ne_aplica_igtf", 1 if igtf_flag else 0)
     dn.db_set("ve_ne_factura", si.name)
+    if clean_screenshot and dn.meta.has_field("ve_ne_comprobante_url"):
+        dn.db_set("ve_ne_comprobante_url", clean_screenshot)
     if dn.meta.has_field("ve_ne_monto_total"):
         dn.db_set("ve_ne_monto_total", total_to_pay)
     if dn.meta.has_field("ve_ne_monto_pagado"):
