@@ -27,15 +27,18 @@ class CimaClientConsumption {
 		const html = `
 			<div class="cima-cc-shell">
 				<div class="cima-cc-hero">
-					<div>
-						<h2>Consumo por Cliente y Desglose por Vendedor</h2>
-						<p>Visualiza cuánto ha consumido cada cliente en total y el detalle exacto de sus compras con cada vendedor.</p>
+					<div class="cima-hero-brand">
+						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" onerror="this.style.display='none'" />
+						<div>
+							<h2>Consumo por Cliente y Desglose por Vendedor</h2>
+							<p>Visualiza cuánto ha consumido cada cliente en total y el detalle exacto de sus compras con cada vendedor.</p>
+						</div>
 					</div>
-					<div class="d-flex" style="gap:8px;flex-wrap:wrap;">
-						<button type="button" class="btn btn-sm btn-primary" data-action="export-csv">Exportar CSV</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="go-notes">Notas de Entrega</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="go-metrics">Métricas de Ventas</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="refresh">Actualizar</button>
+					<div class="d-flex" style="gap:8px;flex-wrap:wrap;align-items:center;">
+						<button type="button" class="cima-btn-primary" data-action="export-csv">Exportar CSV</button>
+						<button type="button" class="cima-btn-ghost" data-action="go-notes">Notas de Entrega</button>
+						<button type="button" class="cima-btn-ghost" data-action="go-metrics">Métricas de Ventas</button>
+						<button type="button" class="cima-btn-ghost" data-action="refresh">Actualizar</button>
 					</div>
 				</div>
 

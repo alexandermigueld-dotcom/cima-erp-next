@@ -35,12 +35,15 @@ class CimaSalesMetrics {
 		const html = `
 			<div class="cima-metrics-shell">
 				<div class="cima-metrics-hero">
-					<div>
-						<h2>Métricas de Ventas — Total y por Usuario</h2>
-						<p>Resumen ejecutivo, ranking de vendedores, canales de venta, facturación fiscal e historial.</p>
+					<div class="cima-hero-brand">
+						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" onerror="this.style.display='none'" />
+						<div>
+							<h2>Métricas de Ventas — Total y por Usuario</h2>
+							<p>Resumen ejecutivo, ranking de vendedores, canales de venta, facturación fiscal e historial.</p>
+						</div>
 					</div>
 					<div class="cima-metrics-actions">
-						<button type="button" class="cima-metrics-btn-ghost" data-action="go-pos">
+						<button type="button" class="cima-btn-primary" data-action="go-pos">
 							+ Facturación Rápida
 						</button>
 						<button type="button" class="cima-metrics-btn-ghost" data-action="export-csv">

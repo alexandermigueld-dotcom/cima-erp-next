@@ -86,12 +86,12 @@ def extract_cima_release(
     if target_sha:
         for rel in releases:
             if (rel.get("hash") or "").startswith(target_sha):
-                return {"name": APP_NAME, "release": rel["name"], "hash": rel["hash"]}
+                return {"app": APP_NAME, "release": rel["name"], "hash": rel["hash"]}
 
     if releases:
         latest = releases[0]
         if latest.get("hash") and latest.get("hash") != current_hash:
-            return {"name": APP_NAME, "release": latest["name"], "hash": latest["hash"]}
+            return {"app": APP_NAME, "release": latest["name"], "hash": latest["hash"]}
 
     return None
 

@@ -41,7 +41,7 @@ class TestDeployFrappeCloud(unittest.TestCase):
         self.assertEqual(
             rel,
             {
-                "name": "cima_ve",
+                "app": "cima_ve",
                 "release": "d8p6v2f80h",
                 "hash": "f0a32efdde2753c3b9c5db825b3d990dd295545c",
             },
@@ -79,7 +79,7 @@ class TestDeployFrappeCloud(unittest.TestCase):
         self.assertEqual(len(deploy_calls), 1)
         self.assertEqual(
             deploy_calls[0]["apps"],
-            [{"name": "cima_ve", "release": "d8p6v2f80h", "hash": "f0a32ef1234"}],
+            [{"app": "cima_ve", "release": "d8p6v2f80h", "hash": "f0a32ef1234"}],
         )
         self.assertTrue(any(m == "press.api.site.update" for m, _ in client.calls))
 

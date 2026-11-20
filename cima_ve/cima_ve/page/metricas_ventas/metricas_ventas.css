@@ -2,6 +2,8 @@
 	max-width: 1420px;
 	margin: 0 auto;
 	padding: 12px 6px 32px;
+	font-family: var(--cima-font-sans, "Inter", "Segoe UI", sans-serif);
+	color: var(--cima-text, #1c2532);
 }
 
 .cima-metrics-hero {
@@ -10,17 +12,21 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 14px;
-	padding: 18px 22px;
-	border-radius: 12px;
-	background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+	padding: 20px 24px;
+	border-radius: 16px;
+	background: linear-gradient(125deg, var(--cima-dark, #1c2532) 0%, #162a36 58%, var(--cima-teal-deep, #119689) 100%);
 	color: #fff;
-	margin-bottom: 16px;
+	margin-bottom: 18px;
+	border-bottom: 4px solid var(--cima-emerald, #06c686);
+	box-shadow: 0 12px 28px rgba(28, 37, 50, 0.18);
 }
 
 .cima-metrics-hero h2 {
 	margin: 0;
-	font-size: 21px;
+	font-family: var(--cima-font-display, "Good Times", "Orbitron", "Segoe UI", sans-serif);
+	font-size: 20px;
 	font-weight: 700;
+	letter-spacing: 0.4px;
 	color: #fff;
 }
 
@@ -48,13 +54,14 @@
 }
 
 .cima-metrics-btn-ghost:hover {
-	background: rgba(255, 255, 255, 0.24);
+	background: rgba(46, 255, 135, 0.18);
+	border-color: var(--cima-mint, #2eff87);
 }
 
 .cima-metrics-filters {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 12px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-radius: 14px;
 	padding: 14px 16px;
 	margin-bottom: 16px;
 	display: flex;
@@ -96,8 +103,8 @@
 }
 
 .cima-preset-btn.active {
-	background: #1d4ed8;
-	border-color: #1d4ed8;
+	background: var(--cima-teal, #00ada4);
+	border-color: var(--cima-teal, #00ada4);
 	color: #fff;
 }
 
@@ -109,17 +116,18 @@
 }
 
 .cima-kpi-card {
-	background: #fff;
-	border: 1px solid #e2e8f0;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-left: 4px solid var(--cima-teal, #00ada4);
 	border-radius: 12px;
 	padding: 14px 16px;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+	box-shadow: 0 2px 8px rgba(28, 37, 50, 0.04);
 }
 
 .cima-kpi-label {
 	font-size: 12px;
 	font-weight: 600;
-	color: #64748b;
+	color: var(--cima-text-muted, #5c6b73);
 	text-transform: uppercase;
 	letter-spacing: 0.02em;
 }
@@ -127,22 +135,22 @@
 .cima-kpi-value {
 	font-size: 24px;
 	font-weight: 800;
-	color: #0f172a;
+	color: var(--cima-dark, #1c2532);
 	margin: 4px 0 2px;
 }
 
 .cima-kpi-sub {
 	font-size: 12px;
-	color: #475569;
+	color: var(--cima-text-muted, #5c6b73);
 }
 
 .cima-metrics-card {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 12px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-radius: 14px;
 	padding: 16px;
 	margin-bottom: 16px;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+	box-shadow: 0 3px 12px rgba(28, 37, 50, 0.05);
 }
 
 .cima-metrics-card-header {
@@ -185,7 +193,7 @@
 
 .cima-share-bar-fill {
 	height: 100%;
-	background: linear-gradient(90deg, #2563eb, #10b981);
+	background: linear-gradient(90deg, var(--cima-teal, #00ada4), var(--cima-emerald, #06c686));
 	border-radius: 999px;
 }
 
@@ -195,11 +203,11 @@
 }
 
 .cima-user-row:hover {
-	background: #f1f5f9 !important;
+	background: var(--cima-surface-muted, #f4f8f8) !important;
 }
 
 .cima-user-row.active-seller {
-	background: #eff6ff !important;
+	background: #e6f7f6 !important;
 }
 
 .cima-trend-bars {
@@ -225,7 +233,7 @@
 .cima-trend-bar {
 	width: 100%;
 	max-width: 32px;
-	background: linear-gradient(180deg, #2563eb 0%, #60a5fa 100%);
+	background: linear-gradient(180deg, var(--cima-teal, #00ada4) 0%, var(--cima-emerald, #06c686) 100%);
 	border-radius: 6px 6px 0 0;
 	min-height: 4px;
 	transition: opacity 0.15s ease;
@@ -261,6 +269,6 @@
 }
 
 .cima-badge-info {
-	background: #dbeafe;
-	color: #1e40af;
+	background: #e6f7f6;
+	color: #0f766e;
 }

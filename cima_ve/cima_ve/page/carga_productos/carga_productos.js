@@ -84,9 +84,12 @@ class CimaProductLoader {
 		const html = `
 			<div class="cima-cp-shell">
 				<div class="cima-cp-hero">
-					<div>
-						<h2>Carga de Productos y Lotes</h2>
-						<p>Crea productos nuevos con foto y precios, o agrega lotes de inventario de forma rápida.</p>
+					<div class="cima-hero-brand">
+						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" onerror="this.style.display='none'" />
+						<div>
+							<h2>Carga de Productos y Lotes</h2>
+							<p>Crea productos nuevos con foto y precios, o agrega lotes de inventario de forma rápida.</p>
+						</div>
 					</div>
 					<div class="cima-cp-hero-actions">
 						<button type="button" class="cima-cp-btn-nav" data-nav="venta-rapida">Facturación Rápida</button>

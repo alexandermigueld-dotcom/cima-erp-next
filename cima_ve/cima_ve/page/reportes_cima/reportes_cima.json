@@ -3,7 +3,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-11-20 10:30:00.000000",
+ "modified": "2026-11-20 19:20:00.000000",
  "modified_by": "Administrator",
  "module": "Cima VE",
  "name": "reportes-cima",
@@ -16,5 +16,5 @@
  ],
  "standard": "Yes",
  "system_page": 0,
- "title": "Reportes Ejecutivos CIMA"
+ "title": "Reportes Ejecutivos"
 }

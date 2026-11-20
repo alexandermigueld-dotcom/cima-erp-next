@@ -1,7 +1,7 @@
 frappe.pages["asistente-cima"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Asistente CIMA",
+		title: "Asistente",
 		single_column: true,
 	});
 
@@ -36,7 +36,8 @@ class CimaAssistant {
 			<div class="cima-ai-shell">
 				<div class="cima-ai-topbar">
 					<div class="cima-ai-topbar-title">
-						<h2>Asistente CIMA</h2>
+						<img src="/assets/cima_ve/images/cima-icono.png" alt="CIMA" class="cima-ai-logo" onerror="this.style.display='none'" />
+						<h2>Asistente</h2>
 						<span class="cima-ai-badge">IA + Inventario</span>
 					</div>
 					<div class="cima-ai-topbar-actions">

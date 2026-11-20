@@ -1,24 +1,30 @@
 .cima-cc-shell {
 	padding: 12px 4px 28px;
+	font-family: var(--cima-font-sans, "Inter", "Segoe UI", sans-serif);
+	color: var(--cima-text, #1c2532);
 }
 
 .cima-cc-hero {
-	background: linear-gradient(135deg, #131921 0%, #232f3e 100%);
+	background: linear-gradient(125deg, var(--cima-dark, #1c2532) 0%, #162a36 58%, var(--cima-teal-deep, #119689) 100%);
 	color: #fff;
-	border-radius: 12px;
-	padding: 18px 22px;
-	margin-bottom: 16px;
+	border-radius: 16px;
+	padding: 20px 24px;
+	margin-bottom: 18px;
+	border-bottom: 4px solid var(--cima-emerald, #06c686);
+	box-shadow: 0 12px 28px rgba(28, 37, 50, 0.18);
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	gap: 14px;
 }
 
 .cima-cc-hero h2 {
 	margin: 0 0 4px;
+	font-family: var(--cima-font-display, "Good Times", "Orbitron", "Segoe UI", sans-serif);
 	font-size: 20px;
 	font-weight: 700;
+	letter-spacing: 0.4px;
 	color: #fff;
 }
 
@@ -36,32 +42,35 @@
 }
 
 .cima-cc-kpi {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-left: 4px solid var(--cima-teal, #00ada4);
+	border-radius: 12px;
 	padding: 14px 16px;
+	box-shadow: 0 2px 8px rgba(28, 37, 50, 0.04);
 }
 
 .cima-cc-kpi-label {
 	font-size: 11px;
 	font-weight: 700;
 	text-transform: uppercase;
-	color: #64748b;
+	color: var(--cima-text-muted, #5c6b73);
 }
 
 .cima-cc-kpi-val {
 	font-size: 22px;
 	font-weight: 800;
-	color: #0f172a;
+	color: var(--cima-dark, #1c2532);
 	margin-top: 4px;
 }
 
 .cima-cc-card {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-radius: 14px;
 	padding: 16px;
 	margin-bottom: 16px;
+	box-shadow: 0 3px 12px rgba(28, 37, 50, 0.05);
 }
 
 .cima-cc-filters {
@@ -73,9 +82,9 @@
 
 .cima-seller-pill {
 	display: inline-block;
-	background: #eff6ff;
-	border: 1px solid #bfdbfe;
-	color: #1e40af;
+	background: #e6f7f6;
+	border: 1px solid #99e2dd;
+	color: #0f766e;
 	border-radius: 6px;
 	padding: 2px 8px;
 	font-size: 11px;

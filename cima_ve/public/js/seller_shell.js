@@ -12,7 +12,7 @@
     };
     add("link", { rel: "manifest", href: "/assets/cima_ve/manifest.json" });
     add("link", { rel: "apple-touch-icon", href: "/assets/cima_ve/images/icon-192.png" });
-    add("meta", { name: "theme-color", content: "#0f172a" });
+    add("meta", { name: "theme-color", content: "#1c2532" });
     add("meta", { name: "mobile-web-app-capable", content: "yes" });
     add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
     add("meta", { name: "apple-mobile-web-app-title", content: "Cima Ventas" });

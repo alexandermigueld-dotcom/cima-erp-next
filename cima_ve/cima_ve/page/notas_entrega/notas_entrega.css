@@ -1,24 +1,30 @@
 .cima-ne-shell {
 	padding: 12px 4px 28px;
+	font-family: var(--cima-font-sans, "Inter", "Segoe UI", sans-serif);
+	color: var(--cima-text, #1c2532);
 }
 
 .cima-ne-hero {
-	background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+	background: linear-gradient(125deg, var(--cima-dark, #1c2532) 0%, #162a36 58%, var(--cima-teal-deep, #119689) 100%);
 	color: #fff;
-	border-radius: 12px;
-	padding: 18px 22px;
-	margin-bottom: 16px;
+	border-radius: 16px;
+	padding: 20px 24px;
+	margin-bottom: 18px;
+	border-bottom: 4px solid var(--cima-emerald, #06c686);
+	box-shadow: 0 12px 28px rgba(28, 37, 50, 0.18);
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	gap: 14px;
 }
 
 .cima-ne-hero h2 {
 	margin: 0 0 4px;
+	font-family: var(--cima-font-display, "Good Times", "Orbitron", "Segoe UI", sans-serif);
 	font-size: 20px;
 	font-weight: 700;
+	letter-spacing: 0.4px;
 	color: #fff;
 }
 
@@ -36,38 +42,41 @@
 }
 
 .cima-ne-kpi {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-left: 4px solid var(--cima-teal, #00ada4);
+	border-radius: 12px;
 	padding: 14px 16px;
+	box-shadow: 0 2px 8px rgba(28, 37, 50, 0.04);
 }
 
 .cima-ne-kpi-label {
 	font-size: 11px;
 	font-weight: 700;
 	text-transform: uppercase;
-	color: #64748b;
+	color: var(--cima-text-muted, #5c6b73);
 }
 
 .cima-ne-kpi-val {
 	font-size: 22px;
 	font-weight: 800;
-	color: #0f172a;
+	color: var(--cima-dark, #1c2532);
 	margin-top: 4px;
 }
 
 .cima-ne-kpi-sub {
 	font-size: 12px;
-	color: #475569;
+	color: var(--cima-text-muted, #5c6b73);
 	margin-top: 2px;
 }
 
 .cima-ne-card {
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
+	background: var(--cima-surface, #fff);
+	border: 1px solid var(--cima-border, #d9e6e5);
+	border-radius: 14px;
 	padding: 16px;
 	margin-bottom: 16px;
+	box-shadow: 0 3px 12px rgba(28, 37, 50, 0.05);
 }
 
 .cima-ne-filters {
@@ -91,13 +100,13 @@
 }
 
 .cima-ne-badge-parcial {
-	background: #dbeafe;
-	color: #1e40af;
+	background: #e6f7f6;
+	color: #0f766e;
 }
 
 .cima-ne-badge-pagada {
 	background: #dcfce7;
-	color: #166534;
+	color: #047857;
 }
 
 .cima-ne-badge-cancelada {

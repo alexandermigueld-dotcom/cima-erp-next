@@ -5,7 +5,7 @@
  "doctype": "Page",
  "icon": "chat",
  "idx": 0,
- "modified": "2026-11-19 18:20:00.000000",
+ "modified": "2026-11-20 19:20:00.000000",
  "modified_by": "Administrator",
  "module": "Cima VE",
  "name": "asistente-cima",
@@ -18,5 +18,5 @@
  ],
  "standard": "Yes",
  "system_page": 0,
- "title": "Asistente CIMA"
+ "title": "Asistente"
 }

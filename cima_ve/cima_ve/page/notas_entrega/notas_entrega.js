@@ -28,15 +28,18 @@ class CimaNotasEntrega {
 		const html = `
 			<div class="cima-ne-shell">
 				<div class="cima-ne-hero">
-					<div>
-						<h2 id="ne-hero-title">Control de Notas de Entrega — Cima Electronic</h2>
-						<p id="ne-hero-subtitle">Seguimiento de despachos pendientes de pago: registra pagos (con método e impuestos) o revierte una nota (solo admin).</p>
+					<div class="cima-hero-brand">
+						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" onerror="this.style.display='none'" />
+						<div>
+							<h2 id="ne-hero-title">Control de Notas de Entrega — Cima Electronic</h2>
+							<p id="ne-hero-subtitle">Seguimiento de despachos pendientes de pago: registra pagos (con método e impuestos) o revierte una nota (solo admin).</p>
+						</div>
 					</div>
-					<div class="d-flex" style="gap:8px;flex-wrap:wrap;">
-						<button type="button" class="btn btn-sm btn-primary" data-action="go-pos">+ Nueva Nota de Entrega</button>
-						<button type="button" class="btn btn-sm btn-success" data-action="calc-commission" id="ne-btn-calc-commission" style="display:none;">Calcular Comisiones</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="go-clients" id="ne-btn-clients" style="display:none;">Clientes y Consumo</button>
-						<button type="button" class="btn btn-sm btn-default" data-action="refresh">Actualizar</button>
+					<div class="d-flex" style="gap:8px;flex-wrap:wrap;align-items:center;">
+						<button type="button" class="cima-btn-primary" data-action="go-pos">+ Nueva Nota de Entrega</button>
+						<button type="button" class="cima-btn-ghost" data-action="calc-commission" id="ne-btn-calc-commission" style="display:none;">Calcular Comisiones</button>
+						<button type="button" class="cima-btn-ghost" data-action="go-clients" id="ne-btn-clients" style="display:none;">Clientes y Consumo</button>
+						<button type="button" class="cima-btn-ghost" data-action="refresh">Actualizar</button>
 					</div>
 				</div>
 

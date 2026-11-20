@@ -1,7 +1,7 @@
 frappe.pages["reportes-cima"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Reportes Ejecutivos — CIMA",
+		title: "Reportes Ejecutivos",
 		single_column: true,
 	});
 	new CimaReportsPage(page, wrapper);

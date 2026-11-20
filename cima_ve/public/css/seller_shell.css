@@ -59,7 +59,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #0f172a;
+  background: var(--cima-dark, #1c2532);
   color: #ffffff;
   font-size: 11px;
   font-weight: 700;
@@ -138,7 +138,7 @@
   height: 48px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #0f172a;
+  background: linear-gradient(135deg, var(--cima-dark, #1c2532), var(--cima-teal-deep, #119689));
   color: #ffffff;
   font-size: 18px;
   font-weight: 700;
@@ -157,8 +157,9 @@
   border-bottom: 1px solid var(--border-color, #e2e8f0);
 }
 #cima-seller-tabs a.is-active {
-  background: #0f172a;
+  background: linear-gradient(135deg, var(--cima-dark, #1c2532) 0%, var(--cima-teal-deep, #119689) 100%);
   color: #ffffff;
+  border-bottom: 2px solid var(--cima-emerald, #06c686);
 }
 
 /* Botón compacto en la barra superior y en Inicio para administradores */
@@ -193,7 +194,7 @@
   background: var(--control-bg, #f1f5f9);
 }
 .cima-home-btn-primary {
-  background: #0f172a;
+  background: linear-gradient(135deg, var(--cima-teal, #00ada4) 0%, var(--cima-emerald, #06c686) 100%);
   color: #ffffff !important;
 }
 #cima-admin-pos-btn {
@@ -201,7 +202,7 @@
   align-items: center;
   padding: 5px 11px !important;
   border-radius: 8px;
-  background: #0f172a;
+  background: linear-gradient(135deg, var(--cima-dark, #1c2532) 0%, var(--cima-teal-deep, #119689) 100%);
   color: #ffffff !important;
   font-weight: 600;
   font-size: 12px;
@@ -210,7 +211,7 @@
   text-decoration: none;
 }
 #cima-admin-pos-btn:hover {
-  background: #1e293b;
+  background: var(--cima-teal-deep, #119689);
 }
 #cima-admin-pos-btn .cima-admin-pos-short {
   display: none;

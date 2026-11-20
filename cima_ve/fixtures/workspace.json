@@ -44,7 +44,7 @@
  },
  {
   "charts": [],
-  "content": "[{\"id\":\"cima-adm-hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Administración y Control — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-adm-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-adm-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-adm-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}},{\"id\":\"cima-adm-sc-5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Carga de Productos y Lotes\",\"col\":3}},{\"id\":\"cima-adm-sc-6\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Asistente CIMA\",\"col\":3}},{\"id\":\"cima-adm-sc-7\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Gastos y Facturas\",\"col\":3}},{\"id\":\"cima-adm-sc-8\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Reportes Ejecutivos\",\"col\":3}},{\"id\":\"cima-adm-sc-9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Business Intelligence\",\"col\":3}},{\"id\":\"cima-adm-sc-10\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Tienda Cima\",\"col\":3}},{\"id\":\"cima-adm-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Configuración Cima VE\",\"col\":3}}]",
+  "content": "[{\"id\":\"cima-adm-hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Administración y Control — Cima Electronic</b></span>\",\"col\":12}},{\"id\":\"cima-adm-sc-1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Notas de Entrega\",\"col\":3}},{\"id\":\"cima-adm-sc-2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Clientes y Consumo\",\"col\":3}},{\"id\":\"cima-adm-sc-3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Métricas de Ventas\",\"col\":3}},{\"id\":\"cima-adm-sc-5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Carga de Productos y Lotes\",\"col\":3}},{\"id\":\"cima-adm-sc-6\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Asistente\",\"col\":3}},{\"id\":\"cima-adm-sc-7\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Gastos y Facturas\",\"col\":3}},{\"id\":\"cima-adm-sc-8\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Reportes Ejecutivos\",\"col\":3}},{\"id\":\"cima-adm-sc-9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Inteligencia de Negocios\",\"col\":3}},{\"id\":\"cima-adm-sc-4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Configuración Cima VE\",\"col\":3}}]",
   "doctype": "Workspace",
   "for_user": "",
   "hide_custom": 1,
@@ -92,7 +92,7 @@
    {
     "color": "Purple",
     "doc_view": "List",
-    "label": "Asistente CIMA",
+    "label": "Asistente",
     "link_to": "asistente-cima",
     "type": "Page"
    },
@@ -113,15 +113,8 @@
    {
     "color": "Teal",
     "doc_view": "List",
-    "label": "Business Intelligence",
+    "label": "Inteligencia de Negocios",
     "link_to": "bi-cima",
-    "type": "Page"
-   },
-   {
-    "color": "Green",
-    "doc_view": "List",
-    "label": "Tienda Cima",
-    "link_to": "tienda-cima",
     "type": "Page"
    },
    {

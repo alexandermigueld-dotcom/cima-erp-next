@@ -1,7 +1,7 @@
 frappe.pages["gastos-cima"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Gastos y Facturas — CIMA",
+		title: "Gastos y Facturas",
 		single_column: true,
 	});
 	new CimaBillsPage(page, wrapper);

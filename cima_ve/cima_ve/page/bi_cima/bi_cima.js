@@ -1,7 +1,7 @@
 frappe.pages["bi-cima"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Business Intelligence — CIMA",
+		title: "Inteligencia de Negocios",
 		single_column: true,
 	});
 	new CimaBiPage(page, wrapper);
@@ -23,7 +23,7 @@ class CimaBiPage {
 					<div class="cima-hero-brand">
 						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" />
 						<div class="cima-hero-title">
-							<h2>Business Intelligence e Importación China</h2>
+							<h2>Inteligencia de Negocios e Importación China</h2>
 							<p>Predicción de agotamiento, clasificación ABC, rotación rápida y plan óptimo de compra.</p>
 						</div>
 					</div>
