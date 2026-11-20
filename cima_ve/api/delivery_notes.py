@@ -548,9 +548,9 @@ def get_delivery_notes(
         params["to_date"] = to_date
     if not is_admin:
         if has_vendedor_user:
-            conditions.append("COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner) = %(current_user)s")
+            conditions.append("LOWER(COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner)) = LOWER(%(current_user)s)")
         else:
-            conditions.append("dn.owner = %(current_user)s")
+            conditions.append("LOWER(dn.owner) = LOWER(%(current_user)s)")
         params["current_user"] = current_user
     elif seller:
         if has_vendedor_user:
@@ -1093,12 +1093,13 @@ def _can_user_settle_delivery_note(dn, user: str) -> bool:
     """Admins pueden cobrar cualquier Nota de Entrega; los vendedores solo las suyas."""
     import frappe
 
-    if not user or user == "Guest":
+    clean_user = (user or "").strip()
+    if not clean_user or clean_user == "Guest":
         return False
-    if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+    if clean_user == "Administrator" or "System Manager" in frappe.get_roles(clean_user):
         return True
     seller_user = (getattr(dn, "ve_vendedor_usuario", None) or "").strip() or (getattr(dn, "owner", None) or "").strip()
-    return bool(seller_user and seller_user == user)
+    return bool(seller_user and seller_user.lower() == clean_user.lower())
 
 
 @whitelist()
@@ -1135,18 +1136,29 @@ def upload_delivery_note_payment_proof(delivery_note: str, file_name: str, file_
     if len(content) > 5 * 1024 * 1024:
         frappe.throw("El comprobante supera el tamaño máximo permitido de 5 MB.")
 
-    file_doc = frappe.get_doc(
-        {
-            "doctype": "File",
-            "file_name": clean_name,
-            "attached_to_doctype": "Delivery Note",
-            "attached_to_name": dn.name,
-            "is_private": 1,
-            "content": content,
-        }
-    )
-    file_doc.flags.ignore_permissions = True
-    file_doc.insert(ignore_permissions=True)
+    is_admin_or_sysmgr = current_user == "Administrator" or "System Manager" in frappe.get_roles(current_user)
+    if not is_admin_or_sysmgr:
+        frappe.set_user("Administrator")
+    try:
+        file_doc = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": clean_name,
+                "attached_to_doctype": "Delivery Note",
+                "attached_to_name": dn.name,
+                "is_private": 1,
+                "content": content,
+            }
+        )
+        file_doc.flags.ignore_permissions = True
+        file_doc.insert(ignore_permissions=True)
+        dn_meta = getattr(dn, "meta", None)
+        if dn_meta and dn_meta.has_field("ve_ne_comprobante_url"):
+            frappe.db.set_value("Delivery Note", dn.name, "ve_ne_comprobante_url", file_doc.file_url)
+    finally:
+        if not is_admin_or_sysmgr:
+            frappe.set_user(current_user)
+
     return {
         "file_id": file_doc.name,
         "file_url": file_doc.file_url,

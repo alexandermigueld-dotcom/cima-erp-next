@@ -715,8 +715,41 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         try:
             self.assertFalse(p.has_permission(Doc(), user="a@x.com"))
             self.assertIsNone(p.has_permission(Doc(), user="b@x.com"))
+            self.assertIsNone(p.has_permission(Doc(), user="B@X.COM"))
         finally:
             del sys.modules["frappe"]
+
+    def test_seller_case_insensitive_settle_and_proof_upload(self) -> None:
+        import sys
+        from cima_ve.api import delivery_notes as dn_api
+
+        class DocMixedCaseOwner:
+            owner = "Marcanocamila2009@gmail.com"
+            ve_vendedor_usuario = ""
+
+        class DocDifferentSeller:
+            owner = "Marcanocamila2009@gmail.com"
+            ve_vendedor_usuario = "other@x.com"
+
+        class FakeFrappe:
+            @staticmethod
+            def get_roles(user):
+                return ["Sales User"]
+
+        sys.modules["frappe"] = FakeFrappe
+        try:
+            self.assertTrue(dn_api._can_user_settle_delivery_note(DocMixedCaseOwner(), "marcanocamila2009@gmail.com"))
+            self.assertFalse(dn_api._can_user_settle_delivery_note(DocDifferentSeller(), "marcanocamila2009@gmail.com"))
+        finally:
+            del sys.modules["frappe"]
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        dn_py = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        self.assertIn("LOWER(COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner)) = LOWER(%(current_user)s)", dn_py)
+        self.assertIn('frappe.set_user("Administrator")', dn_py)
+        self.assertIn("openUploadProofDialog", ne_js)
+        self.assertIn("data-proof-dn", ne_js)
 
 
 if __name__ == "__main__":
