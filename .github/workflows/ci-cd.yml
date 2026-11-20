@@ -1,0 +1,63 @@
+name: CIMA VE CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cima-ve-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Unit Tests & JSON Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate JSON files under cima_ve
+        run: |
+          python -c "
+          import json, pathlib
+          files = list(pathlib.Path('cima_ve').rglob('*.json'))
+          for f in files:
+              json.loads(f.read_text(encoding='utf-8'))
+          print(f'Validated {len(files)} JSON files OK')
+          "
+
+  deploy:
+    name: Deploy cima_ve to Frappe Cloud
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    env:
+      FRAPPE_API_ACCESS_KEY: ${{ secrets.FRAPPE_API_ACCESS_KEY }}
+      FRAPPE_API_SECRET: ${{ secrets.FRAPPE_API_SECRET }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Trigger Frappe Cloud cima_ve-only deploy
+        run: |
+          if [ -z "$FRAPPE_API_ACCESS_KEY" ] || [ -z "$FRAPPE_API_SECRET" ]; then
+            echo "FRAPPE_API_ACCESS_KEY / FRAPPE_API_SECRET GitHub secrets are not configured yet; skipping deploy."
+            exit 0
+          fi
+          python scripts/deploy_frappe_cloud.py --wait 900
