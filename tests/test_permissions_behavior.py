@@ -173,6 +173,82 @@ class AdminOnlyEndpointTests(unittest.TestCase):
         self.assertEqual(db_sets["ve_ne_motivo_cancelacion"], "Cliente devolvió")
         self.assertTrue(any("REVERTIDA" in c for c in comments))
 
+    def test_admin_revert_reloads_sales_invoice_after_cancelling_payment_entry(self) -> None:
+        from cima_ve.api import delivery_notes as dn
+
+        fk = make_fake_frappe(["System Manager"], user="admin@x.com")
+        si_db_version = {"v": 1}
+        cancelled: list[str] = []
+
+        class FakeMeta:
+            @staticmethod
+            def has_field(name: str) -> bool:
+                return True
+
+        class FakePE:
+            name = "PE-11"
+            docstatus = 1
+            flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                self.docstatus = 2
+                si_db_version["v"] += 1
+                cancelled.append(self.name)
+
+        class FakeSI:
+            def __init__(self, loaded_v: int):
+                self.name = "SINV-11"
+                self.docstatus = 1
+                self.ve_numero_control = ""
+                self.loaded_v = loaded_v
+                self.flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                if self.loaded_v != si_db_version["v"]:
+                    raise RuntimeError("TimestampMismatchError: Sales Invoice modified after load")
+                self.docstatus = 2
+                cancelled.append(self.name)
+
+        class FakeDN:
+            name = "MAT-DN-11"
+            docstatus = 1
+            ve_ne_estado = "Pagada"
+            ve_ne_factura = "SINV-11"
+            ve_ne_historial_pagos = ""
+            meta = FakeMeta()
+            flags = types.SimpleNamespace(ignore_permissions=False)
+
+            def cancel(self):
+                self.docstatus = 2
+                cancelled.append(self.name)
+
+            def db_set(self, k, v):
+                pass
+
+            def add_comment(self, kind, msg):
+                pass
+
+        dn_doc = FakeDN()
+        pe_doc = FakePE()
+
+        def fake_get_doc(dt, name):
+            if dt == "Delivery Note":
+                return dn_doc
+            if dt == "Payment Entry":
+                return pe_doc
+            if dt == "Sales Invoice":
+                return FakeSI(si_db_version["v"])
+            raise KeyError((dt, name))
+
+        fk.get_doc = fake_get_doc
+        fk.get_all = lambda *a, **k: ["PE-11"]
+
+        with patched_frappe(fk):
+            res = dn.revert_delivery_note("MAT-DN-11", reason="Error de emisión")
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(cancelled, ["PE-11", "SINV-11", "MAT-DN-11"])
+
     def test_admin_revert_unpaid_note_restores_stock_and_retains_cancelled_record(self) -> None:
         from cima_ve.api import delivery_notes as dn
 

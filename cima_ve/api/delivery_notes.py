@@ -957,6 +957,9 @@ def revert_delivery_note(delivery_note: str, reason: str = "") -> dict:
             pe.cancel()
             reverted_payment_entries.append(pe.name)
 
+    if si_name:
+        # Recargar la factura tras cancelar los Payment Entries para evitar TimestampMismatchError
+        si = frappe.get_doc("Sales Invoice", si_name)
     if si and si.docstatus == 1:
         si.flags.ignore_permissions = True
         si.cancel()
