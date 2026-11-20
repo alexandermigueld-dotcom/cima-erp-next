@@ -688,29 +688,34 @@ def get_delivery_notes(
         if is_excluded_channel:
             r["ve_ne_comision_pct"] = 0.0
             r["ve_ne_comision_monto"] = 0.0
-        elif (
-            comm_enabled
-            and not is_cancelled
-            and float(r.get("ve_ne_comision_pct") or 0.0) <= 0.0
-        ):
-            rule = resolve_commission_rule(
-                r.get("ve_ne_comision_opcion") or r.get("canal_venta") or "",
-                comm_rules,
-            )
-            if rule:
-                calc_cost = _compute_dn_items_total_cost(
-                    r["items"],
-                    bin_costs=bin_costs,
-                    item_costs=item_costs,
+        elif comm_enabled and not is_cancelled:
+            stored_pct = float(r.get("ve_ne_comision_pct") or 0.0)
+            net_sale = float(r.get("net_total") or r.get("grand_total") or 0.0)
+            if stored_pct <= 0.0:
+                rule = resolve_commission_rule(
+                    r.get("ve_ne_comision_opcion") or r.get("canal_venta") or "",
+                    comm_rules,
                 )
-                net_sale = float(r.get("net_total") or r.get("grand_total") or 0.0)
-                calc = compute_margin_commission(net_sale, calc_cost, float(rule.get("percentage") or 0.0))
-                r["ve_ne_comision_opcion"] = rule.get("label") or ""
-                r["ve_ne_comision_pct"] = calc["commission_pct"]
-                r["ve_ne_costo_total"] = calc["total_cost"]
-                r["ve_ne_margen_ganancia"] = calc["margin_amount"]
-                r["ve_ne_comision_monto"] = calc["commission_amount"]
-                r["_commission_computed_fallback"] = True
+                if rule:
+                    calc_cost = _compute_dn_items_total_cost(
+                        r["items"],
+                        bin_costs=bin_costs,
+                        item_costs=item_costs,
+                    )
+                    calc = compute_margin_commission(net_sale, calc_cost, float(rule.get("percentage") or 0.0))
+                    r["ve_ne_comision_opcion"] = rule.get("label") or ""
+                    r["ve_ne_comision_pct"] = calc["commission_pct"]
+                    r["ve_ne_costo_total"] = calc["total_cost"]
+                    r["ve_ne_margen_ganancia"] = calc["margin_amount"]
+                    r["ve_ne_comision_monto"] = calc["commission_amount"]
+                    r["_commission_computed_fallback"] = True
+            else:
+                stored_cost = float(r.get("ve_ne_costo_total") or 0.0)
+                calc = compute_margin_commission(net_sale, stored_cost, stored_pct)
+                stored_comm = round(float(r.get("ve_ne_comision_monto") or 0.0), 2)
+                if abs(stored_comm - calc["commission_amount"]) > 0.01:
+                    r["ve_ne_comision_monto"] = calc["commission_amount"]
+                    r["_commission_computed_fallback"] = True
 
     summarized = summarize_delivery_notes(rows)
     if status == "Pendiente":

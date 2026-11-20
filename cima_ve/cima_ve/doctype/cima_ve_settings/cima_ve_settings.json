@@ -390,10 +390,10 @@
   },
   {
    "default": "1",
-   "description": "Calcula la comisión del vendedor sobre el margen de ganancia (Venta neta - Costo de productos) según la opción seleccionada.",
+   "description": "Calcula la comisión del vendedor sobre el precio de venta neto según la modalidad/canal seleccionado.",
    "fieldname": "commission_enabled",
    "fieldtype": "Check",
-   "label": "Habilitar Comisiones por Margen de Ganancia"
+   "label": "Habilitar Comisiones por Precio de Venta"
   },
   {
    "default": "[{\"label\": \"Meta Ads 7%\", \"channel\": \"Meta Ads\", \"percentage\": 7}, {\"label\": \"Detal 8%\", \"channel\": \"Detal\", \"percentage\": 8}, {\"label\": \"Mayor 10%\", \"channel\": \"Mayor\", \"percentage\": 10}]",
