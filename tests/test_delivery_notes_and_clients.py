@@ -325,15 +325,21 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         )
         self.assertEqual(resolve_commission_rule("VIP 12%", custom)["percentage"], 12.0)
 
-        # Prompt example: cost $50, winning margin $10 (sale $60), Mayor 10% -> seller wins $1
+        # Commission is calculated on selling price (net_sale_amount), not margin:
+        # sale $60, cost $50, Mayor 10% -> margin $10 (informational), seller commission $6.00
         calc = compute_margin_commission(net_sale_amount=60.0, total_cost=50.0, commission_pct=10.0)
         self.assertEqual(calc["margin_amount"], 10.0)
-        self.assertEqual(calc["commission_amount"], 1.0)
+        self.assertEqual(calc["commission_amount"], 6.0)
 
-        # Loss / negative margin yields 0 commission
+        # Detal 8% on $25.00 sale (cost $9.31, margin $15.69) -> $2.00 commission
+        detal_calc = compute_margin_commission(net_sale_amount=25.0, total_cost=9.31, commission_pct=8.0)
+        self.assertEqual(detal_calc["margin_amount"], 15.69)
+        self.assertEqual(detal_calc["commission_amount"], 2.0)
+
+        # Even if margin is negative, commission still applies on net_sale_amount
         loss_calc = compute_margin_commission(net_sale_amount=45.0, total_cost=50.0, commission_pct=10.0)
         self.assertEqual(loss_calc["margin_amount"], -5.0)
-        self.assertEqual(loss_calc["commission_amount"], 0.0)
+        self.assertEqual(loss_calc["commission_amount"], 4.5)
 
         notes = [
             {

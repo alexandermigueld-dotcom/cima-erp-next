@@ -383,13 +383,12 @@ def compute_margin_commission(
     total_cost: float,
     commission_pct: float,
 ) -> dict:
-    """Calcula el margen de ganancia (venta neta - costo) y la comisión del vendedor sobre ese margen."""
+    """Calcula la comisión del vendedor sobre el precio de venta neto (conservando costo y margen informativos)."""
     net_sale = round(max(float(net_sale_amount or 0.0), 0.0), 2)
     cost = round(max(float(total_cost or 0.0), 0.0), 2)
     margin = round(net_sale - cost, 2)
-    positive_margin = max(margin, 0.0)
     pct = round(min(max(float(commission_pct or 0.0), 0.0), 100.0), 2)
-    commission = round(positive_margin * (pct / 100.0), 2)
+    commission = round(net_sale * (pct / 100.0), 2)
     return {
         "net_sale_amount": net_sale,
         "total_cost": cost,
