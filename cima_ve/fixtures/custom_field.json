@@ -224,9 +224,20 @@
  {
   "doctype": "Custom Field",
   "dt": "Delivery Note",
+  "fieldname": "ve_ne_fecha_vencimiento",
+  "fieldtype": "Date",
+  "insert_after": "ve_ne_estado",
+  "label": "Fecha de Vencimiento",
+  "module": "Cima VE",
+  "name": "Delivery Note-ve_ne_fecha_vencimiento",
+  "reqd": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Delivery Note",
   "fieldname": "ve_ne_fecha_resolucion",
   "fieldtype": "Datetime",
-  "insert_after": "ve_ne_estado",
+  "insert_after": "ve_ne_fecha_vencimiento",
   "label": "Fecha de Pago / Cancelación",
   "module": "Cima VE",
   "name": "Delivery Note-ve_ne_fecha_resolucion",

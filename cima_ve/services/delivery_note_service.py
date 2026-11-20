@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+import html
 import json
 
 
@@ -8,6 +10,34 @@ DEFAULT_AUTO_DISCOUNT_TIERS: list[dict] = [
     {"label": "Compra $500 - $1,000", "min_amount": 500.0, "max_amount": 1000.0, "discount_percentage": 4.76},
     {"label": "Compra > $1,000", "min_amount": 1000.01, "max_amount": None, "discount_percentage": 9.09},
 ]
+
+
+def _parse_iso_date(raw_date: object) -> date | None:
+    """Convierte una fecha (date, datetime o string YYYY-MM-DD) a datetime.date."""
+    if raw_date is None:
+        return None
+    if isinstance(raw_date, datetime):
+        return raw_date.date()
+    if isinstance(raw_date, date):
+        return raw_date
+    text = str(raw_date).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def validate_due_date(due_date: str | None) -> str:
+    """Valida que la Fecha de Vencimiento obligatoria esté presente y tenga formato YYYY-MM-DD."""
+    clean = str(due_date or "").strip()
+    if not clean:
+        raise ValueError("Debe indicar la Fecha de Vencimiento de la Nota de Entrega.")
+    parsed = _parse_iso_date(clean)
+    if parsed is None:
+        raise ValueError("La Fecha de Vencimiento debe tener un formato válido (YYYY-MM-DD).")
+    return parsed.isoformat()
 
 
 def parse_auto_discount_tiers(raw_tiers: str | list | None) -> list[dict]:
@@ -428,12 +458,15 @@ def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
     return result
 
 
-def summarize_delivery_notes(notes: list[dict]) -> dict:
+def summarize_delivery_notes(notes: list[dict], reference_date: date | str | None = None) -> dict:
     """Genera KPIs y normaliza el listado de Notas de Entrega."""
+    ref_date = _parse_iso_date(reference_date) or date.today()
     total_count = 0
     pending_count = 0
     partial_count = 0
     pending_total = 0.0
+    overdue_count = 0
+    overdue_total = 0.0
     paid_count = 0
     paid_total = 0.0
     cancelled_count = 0
@@ -477,6 +510,16 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             estado = "Pendiente"
             remaining_amount = total_to_pay
 
+        due_date_obj = _parse_iso_date(row.get("ve_ne_fecha_vencimiento"))
+        due_date_str = due_date_obj.isoformat() if due_date_obj else ""
+        is_overdue = bool(
+            estado in ("Pendiente", "Pago Parcial")
+            and due_date_obj is not None
+            and due_date_obj < ref_date
+            and remaining_amount > 0.01
+        )
+        days_overdue = (ref_date - due_date_obj).days if is_overdue and due_date_obj is not None else 0
+
         total_count += 1
         if estado == "Pendiente":
             pending_count += 1
@@ -493,8 +536,15 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             cancelled_count += 1
             cancelled_total += base_amount
 
+        if is_overdue:
+            overdue_count += 1
+            overdue_total += remaining_amount
+
         item = dict(row)
         item["ve_ne_estado"] = estado
+        item["ve_ne_fecha_vencimiento"] = due_date_str
+        item["is_overdue"] = is_overdue
+        item["days_overdue"] = days_overdue
         item["amount"] = base_amount
         item["total_to_pay"] = total_to_pay
         item["paid_amount"] = paid_amount
@@ -569,6 +619,8 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
             "pending_count": pending_count,
             "partial_count": partial_count,
             "pending_total": round(pending_total, 2),
+            "overdue_count": overdue_count,
+            "overdue_total": round(overdue_total, 2),
             "paid_count": paid_count,
             "paid_total": round(paid_total, 2),
             "cancelled_count": cancelled_count,
@@ -581,6 +633,92 @@ def summarize_delivery_notes(notes: list[dict]) -> dict:
         },
         "notes": normalized,
     }
+
+
+def filter_overdue_delivery_notes(
+    notes: list[dict],
+    reference_date: date | str | None = None,
+) -> list[dict]:
+    """Filtra Notas de Entrega activas cuyo pago no está completo después de su Fecha de Vencimiento."""
+    summarized = summarize_delivery_notes(notes, reference_date=reference_date)
+    overdue = [n for n in summarized["notes"] if n.get("is_overdue")]
+    overdue.sort(
+        key=lambda n: (int(n.get("days_overdue") or 0), float(n.get("remaining_amount") or 0.0)),
+        reverse=True,
+    )
+    return overdue
+
+
+def build_overdue_delivery_notes_email_html(
+    overdue_notes: list[dict],
+    reference_date: date | str | None = None,
+) -> str:
+    """Genera el HTML del correo semanal (Lunes) de Notas de Entrega vencidas sin pago completo."""
+    ref_date = _parse_iso_date(reference_date) or date.today()
+    total_pending = round(sum(float(n.get("remaining_amount") or 0.0) for n in overdue_notes), 2)
+
+    rows_html = ""
+    for n in overdue_notes:
+        dn_name = html.escape(str(n.get("name") or ""))
+        customer = html.escape(str(n.get("customer_name") or n.get("customer") or ""))
+        seller = html.escape(str(n.get("seller_name") or n.get("seller_user") or "-"))
+        posting_date = html.escape(str(n.get("posting_date") or ""))
+        due_date = html.escape(str(n.get("ve_ne_fecha_vencimiento") or ""))
+        days_over = int(n.get("days_overdue") or 0)
+        estado = html.escape(str(n.get("ve_ne_estado") or "Pendiente"))
+        total_amt = float(n.get("total_to_pay") or n.get("amount") or 0.0)
+        paid_amt = float(n.get("paid_amount") or 0.0)
+        rem_amt = float(n.get("remaining_amount") or 0.0)
+        rows_html += f"""
+        <tr>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;"><strong>{dn_name}</strong></td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">{customer}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">{seller}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">{posting_date}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">{due_date}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c;font-weight:700;">{days_over} días</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">{estado}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">${total_amt:,.2f}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">${paid_amt:,.2f}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c;font-weight:700;">${rem_amt:,.2f}</td>
+        </tr>
+        """
+
+    return f"""
+    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:900px;margin:0 auto;color:#1c2532;">
+      <div style="background:#1c2532;color:#ffffff;padding:20px 24px;border-radius:12px 12px 0 0;border-bottom:4px solid #dc2626;">
+        <h2 style="margin:0 0 6px;font-size:20px;">Reporte Semanal (Lunes) — Notas de Entrega Vencidas</h2>
+        <p style="margin:0;color:#cbd5e1;font-size:13px;">
+          Corte al <strong>{ref_date.isoformat()}</strong> · Notas de Entrega con fecha de vencimiento superada sin pago completo.
+        </p>
+      </div>
+      <div style="padding:20px 24px;border:1px solid #d9e6e5;border-top:none;border-radius:0 0 12px 12px;background:#ffffff;">
+        <p style="margin-top:0;">
+          Se encontraron <strong>{len(overdue_notes)}</strong> Notas de Entrega vencidas con un saldo pendiente total de
+          <strong style="color:#b91c1c;">${total_pending:,.2f}</strong>:
+        </p>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#f4f8f8;text-align:left;">
+                <th style="padding:8px 10px;">Nota de Entrega</th>
+                <th style="padding:8px 10px;">Cliente</th>
+                <th style="padding:8px 10px;">Vendedor</th>
+                <th style="padding:8px 10px;">Emisión</th>
+                <th style="padding:8px 10px;">Vencimiento</th>
+                <th style="padding:8px 10px;text-align:right;">Atraso</th>
+                <th style="padding:8px 10px;">Estado</th>
+                <th style="padding:8px 10px;text-align:right;">Total</th>
+                <th style="padding:8px 10px;text-align:right;">Pagado</th>
+                <th style="padding:8px 10px;text-align:right;">Saldo Pendiente</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    """
 
 
 DEFAULT_NOTIFICATION_EMAILS = ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"]
@@ -623,6 +761,7 @@ def build_delivery_note_notification_payload(
     screenshot_url: str = "",
     whatsapp_number: str | None = None,
     email_recipients_raw: str | None = None,
+    due_date: str = "",
 ) -> dict:
     """Construye el asunto, HTML, texto WhatsApp y enlace wa.me al crear cualquier Nota de Entrega."""
     from cima_ve.services.storefront_service import build_whatsapp_link
@@ -653,6 +792,8 @@ def build_delivery_note_notification_payload(
     ]
     if seller_name:
         text_lines.append(f"Vendedor: {seller_name}")
+    if due_date:
+        text_lines.append(f"Fecha de vencimiento: {due_date}")
     if customer_email:
         text_lines.append(f"Correo cliente: {customer_email}")
     if customer_phone:
@@ -684,6 +825,8 @@ def build_delivery_note_notification_payload(
     extra_html_rows = ""
     if seller_name:
         extra_html_rows += f"<p><strong>Vendedor:</strong> {seller_name}</p>"
+    if due_date:
+        extra_html_rows += f"<p><strong>Fecha de vencimiento:</strong> {html.escape(str(due_date))}</p>"
     if customer_email or customer_phone:
         extra_html_rows += f"<p><strong>Contacto cliente:</strong> {customer_email or '-'} | {customer_phone or '-'}</p>"
     if delivery_provider:

@@ -200,7 +200,7 @@ class CimaNotasEntrega {
 			<div class="cima-ne-kpi">
 				<div class="cima-ne-kpi-label">Pendientes por Cobrar</div>
 				<div class="cima-ne-kpi-val" style="color:#b45309;">$${Number(s.pending_total || 0).toFixed(2)}</div>
-				<div class="cima-ne-kpi-sub">${s.pending_count || 0} notas activas</div>
+				<div class="cima-ne-kpi-sub">${s.pending_count || 0} notas activas${Number(s.overdue_count || 0) > 0 ? ` · <span style="color:#b91c1c;font-weight:700;">${s.overdue_count} vencidas</span>` : ""}</div>
 			</div>
 			<div class="cima-ne-kpi">
 				<div class="cima-ne-kpi-label">Pagadas</div>
@@ -423,10 +423,18 @@ class CimaNotasEntrega {
 						`;
 					}
 
+					const dueDateStr = n.ve_ne_fecha_vencimiento || "";
+					const dueBadge = n.is_overdue
+						? `<div class="mt-1"><span class="label" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-size:10px;font-weight:700;">VENCIDA (${Number(n.days_overdue || 0)}d)</span></div>`
+						: "";
+					const dueHtml = dueDateStr
+						? `<div class="small ${n.is_overdue ? "text-danger font-weight-bold" : "text-muted"}">Vence: ${frappe.utils.escape_html(dueDateStr)}</div>${dueBadge}`
+						: "";
+
 					return `
 						<tr>
 							<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a>${originBadge}</td>
-							<td>${frappe.utils.escape_html(n.posting_date || "")}</td>
+							<td>${frappe.utils.escape_html(n.posting_date || "")}${dueHtml}</td>
 							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}${n.ve_ne_cliente_telefono ? `<div class="small text-muted">${frappe.utils.escape_html(n.ve_ne_cliente_telefono)}</div>` : ""}</td>
 							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
 							<td class="small">${itemsText}${moreItems}${shipInfo}${globalDiscBadge}${noteDiscountBadge}</td>

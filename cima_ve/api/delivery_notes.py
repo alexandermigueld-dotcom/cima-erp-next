@@ -22,6 +22,7 @@ from cima_ve.services.delivery_note_service import (
     resolve_commission_rule,
     summarize_delivery_notes,
     summarize_seller_commissions,
+    validate_due_date,
 )
 from cima_ve.services.seller_pos_service import (
     compute_custom_price_breakdown,
@@ -180,6 +181,7 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
         screenshot_url=getattr(doc, "ve_ne_comprobante_url", None) or extra.get("screenshot_url") or "",
         whatsapp_number=target_wa or DEFAULT_NOTIFICATION_WHATSAPP,
         email_recipients_raw=raw_emails or ", ".join(DEFAULT_NOTIFICATION_EMAILS),
+        due_date=str(getattr(doc, "ve_ne_fecha_vencimiento", "") or extra.get("due_date") or ""),
     )
 
     email_sent = False
@@ -265,10 +267,16 @@ def create_quick_delivery_note(
     manual_discount_enabled: int | bool = 0,
     manual_discount_percentage: float | str = 0.0,
     commission_option: str = "",
+    fecha_vencimiento: str = "",
 ) -> dict:
     """Crea y confirma una Nota de Entrega (Delivery Note): descuenta inventario sin cobrar dinero aún."""
     import frappe
     from cima_ve.api.seller_pos import _apply_required_sales_metadata, _resolve_company_and_currency
+
+    try:
+        validated_due_date = validate_due_date(fecha_vencimiento)
+    except ValueError as exc:
+        frappe.throw(str(exc))
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
     validated = validate_quick_invoice_input(customer, parsed_items)
@@ -310,6 +318,7 @@ def create_quick_delivery_note(
             "ve_vendedor_usuario": seller_user,
             "ve_vendedor_nombre": seller_name,
             "ve_ne_estado": "Pendiente",
+            "ve_ne_fecha_vencimiento": validated_due_date,
             "remarks": (notes or f"Nota de Entrega ({seller_name}) — Pendiente por cobrar").strip(),
             "items": dn_items,
         }
@@ -451,6 +460,7 @@ def create_quick_delivery_note(
         "delivery_note": doc.name,
         "status": doc.status,
         "ve_ne_estado": getattr(doc, "ve_ne_estado", None) or "Pendiente",
+        "fecha_vencimiento": getattr(doc, "ve_ne_fecha_vencimiento", None) or validated_due_date,
         "currency": doc.currency,
         "net_total": float(doc.net_total or 0),
         "grand_total": float(doc.grand_total or 0),
@@ -488,6 +498,7 @@ def get_delivery_notes(
 
     dn_meta = frappe.get_meta("Delivery Note")
     has_estado = dn_meta.has_field("ve_ne_estado")
+    has_fecha_venc = dn_meta.has_field("ve_ne_fecha_vencimiento")
     has_vendedor_user = dn_meta.has_field("ve_vendedor_usuario")
     has_vendedor_name = dn_meta.has_field("ve_vendedor_nombre")
     has_fecha_res = dn_meta.has_field("ve_ne_fecha_resolucion")
@@ -571,6 +582,7 @@ def get_delivery_notes(
         "COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner) AS seller_user" if has_vendedor_user else "dn.owner AS seller_user",
         "dn.ve_vendedor_nombre AS seller_name" if has_vendedor_name else "'' AS seller_name",
         "dn.ve_ne_estado AS ve_ne_estado" if has_estado else "'' AS ve_ne_estado",
+        "dn.ve_ne_fecha_vencimiento AS ve_ne_fecha_vencimiento" if has_fecha_venc else "NULL AS ve_ne_fecha_vencimiento",
         "dn.ve_ne_fecha_resolucion AS ve_ne_fecha_resolucion" if has_fecha_res else "NULL AS ve_ne_fecha_resolucion",
         "dn.ve_ne_usuario_resolucion AS ve_ne_usuario_resolucion" if has_user_res else "'' AS ve_ne_usuario_resolucion",
         "dn.ve_ne_metodo_pago AS ve_ne_metodo_pago" if has_metodo else "'' AS ve_ne_metodo_pago",
@@ -758,6 +770,16 @@ def get_delivery_notes(
         "commission_rules": comm_rules,
     }
     return summarized
+
+
+@whitelist()
+def send_overdue_delivery_notes_report() -> dict:
+    """Dispara manualmente el reporte por correo de Notas de Entrega vencidas sin pago completo (solo System Manager)."""
+    import frappe
+    from cima_ve.tasks import send_monday_overdue_delivery_notes_alert
+
+    frappe.only_for("System Manager")
+    return send_monday_overdue_delivery_notes_alert(force=True)
 
 
 @whitelist()

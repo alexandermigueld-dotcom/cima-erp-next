@@ -970,6 +970,7 @@ def _place_storefront_order_impl(
             "ve_vendedor_usuario": None,
             "ve_vendedor_nombre": "Tienda Web (/tienda)",
             "ve_ne_estado": "Pendiente",
+            "ve_ne_fecha_vencimiento": frappe.utils.today(),
             "remarks": " | ".join(note_parts),
             "items": dn_items,
         }

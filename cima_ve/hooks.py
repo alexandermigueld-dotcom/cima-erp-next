@@ -49,4 +49,9 @@ scheduler_events = {
     "weekly": [
         "cima_ve.tasks.send_weekly_bi_stockout_alert",
     ],
+    "cron": {
+        "0 8 * * 1": [
+            "cima_ve.tasks.send_monday_overdue_delivery_notes_alert",
+        ],
+    },
 }

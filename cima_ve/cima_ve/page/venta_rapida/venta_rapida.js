@@ -30,6 +30,7 @@ class CimaSellerPortal {
 			warehouse: "",
 			salesChannel: "Detal",
 			commissionOption: "",
+			dueDate: "",
 			selectedCustomer: null,
 			manualDiscountEnabled: false,
 			manualDiscountPct: 0,
@@ -146,6 +147,11 @@ class CimaSellerPortal {
 							<div class="form-group mt-3">
 								<label class="control-label">Canal de Venta / Comisión</label>
 								<select id="cima-sales-channel" class="form-control"></select>
+							</div>
+
+							<div class="form-group mt-2">
+								<label class="control-label">Fecha de Vencimiento <span style="color:#dc2626;">*</span></label>
+								<input type="date" id="cima-due-date" class="form-control" required />
 							</div>
 
 							<div class="form-group mt-2" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;">
@@ -352,6 +358,14 @@ class CimaSellerPortal {
 			const rules = this.state.bootstrap?.commission_rules || [];
 			const matched = rules.find((r) => r.label === selected || r.channel === selected);
 			this.state.salesChannel = matched ? matched.channel : selected;
+		});
+
+		root.on("change input", "#cima-due-date", (e) => {
+			this.state.dueDate = ($(e.target).val() || "").trim();
+			this.wrapper.find("#cima-btn-emit").prop(
+				"disabled",
+				!this.state.selectedCustomer || !this.state.cart.length || !this.state.dueDate
+			);
 		});
 
 		root.on("change", "#cima-enable-discount", (e) => {
@@ -800,7 +814,7 @@ class CimaSellerPortal {
 
 		this.updateSummaryFromCart(summaryOverride);
 
-		emitBtn.prop("disabled", !this.state.selectedCustomer || !this.state.cart.length);
+		emitBtn.prop("disabled", !this.state.selectedCustomer || !this.state.cart.length || !this.state.dueDate);
 	}
 
 	computeGlobalDiscounts(base) {
@@ -1010,6 +1024,13 @@ class CimaSellerPortal {
 			frappe.msgprint("Selecciona un cliente y al menos un producto.");
 			return;
 		}
+		const dueDate = (this.state.dueDate || this.wrapper.find("#cima-due-date").val() || "").trim();
+		if (!dueDate) {
+			frappe.msgprint("Debes indicar la Fecha de Vencimiento de la Nota de Entrega.");
+			this.wrapper.find("#cima-due-date").focus();
+			return;
+		}
+		this.state.dueDate = dueDate;
 		const btn = this.wrapper.find("#cima-btn-emit");
 		btn.prop("disabled", true).text("Emitiendo Nota de Entrega...");
 
@@ -1022,6 +1043,7 @@ class CimaSellerPortal {
 				warehouse: this.state.warehouse,
 				sales_channel: this.state.salesChannel,
 				commission_option: this.state.commissionOption || this.state.salesChannel,
+				fecha_vencimiento: dueDate,
 				manual_discount_enabled: this.state.manualDiscountEnabled ? 1 : 0,
 				manual_discount_percentage: this.state.manualDiscountEnabled ? Number(this.state.manualDiscountPct || 0) : 0,
 			},
@@ -1030,6 +1052,8 @@ class CimaSellerPortal {
 				if (r.message) {
 					this.state.lastInvoiceResult = r.message;
 					this.state.cart = [];
+					this.state.dueDate = "";
+					this.wrapper.find("#cima-due-date").val("");
 					this.state.manualDiscountEnabled = false;
 					this.state.manualDiscountPct = 0;
 					this.wrapper.find("#cima-enable-discount").prop("checked", false);
@@ -1078,13 +1102,14 @@ class CimaSellerPortal {
 			: "";
 		const commInfo = res.commission || {};
 		const commOptText = commInfo.option ? ` · <strong>Modalidad:</strong> ${frappe.utils.escape_html(commInfo.option)}` : "";
+		const dueDateText = res.fecha_vencimiento ? ` · <strong>Vence:</strong> ${frappe.utils.escape_html(res.fecha_vencimiento)}` : "";
 		const bsRate = this.getBsRate();
 		const bannerBs = bsRate > 0 ? ` (${this.formatBs(Number(res.grand_total || 0) * bsRate)})` : "";
 		box.html(`
 			<div class="cima-result-banner">
 				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}${bannerBs}</div>
 				<div class="small mt-1">
-					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText} ·
+					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText}${dueDateText} ·
 					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${notesLink}
 				</div>
 				${globalDiscLine}

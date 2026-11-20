@@ -9,11 +9,13 @@ from cima_ve.services.delivery_note_service import (
     DEFAULT_NOTIFICATION_WHATSAPP,
     append_payment_history,
     build_delivery_note_notification_payload,
+    build_overdue_delivery_notes_email_html,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_historical_bs_payment,
     compute_margin_commission,
     compute_partial_payment_state,
+    filter_overdue_delivery_notes,
     is_cash_payment_method,
     is_non_commission_channel,
     parse_auto_discount_tiers,
@@ -22,6 +24,7 @@ from cima_ve.services.delivery_note_service import (
     resolve_commission_rule,
     summarize_delivery_notes,
     summarize_seller_commissions,
+    validate_due_date,
 )
 
 
@@ -568,6 +571,119 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("MercadoLibre (Sin comisión)", vr_js)
         self.assertIn("MercadoLibre", ne_js)
         self.assertIn("MercadoLibre", cf_json)
+
+    def test_due_date_validation_overdue_filtering_and_monday_email(self) -> None:
+        self.assertEqual(validate_due_date("2026-11-30"), "2026-11-30")
+        with self.assertRaises(ValueError):
+            validate_due_date("")
+        with self.assertRaises(ValueError):
+            validate_due_date("   ")
+        with self.assertRaises(ValueError):
+            validate_due_date("2026-99-99")
+
+        notes = [
+            {
+                "name": "DN-OVER-1",
+                "docstatus": 1,
+                "posting_date": "2026-11-01",
+                "customer_name": "Cliente Moroso",
+                "seller_name": "Carlos",
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_fecha_vencimiento": "2026-11-10",
+                "grand_total": 120.0,
+            },
+            {
+                "name": "DN-OVER-PARTIAL",
+                "docstatus": 1,
+                "posting_date": "2026-11-05",
+                "customer_name": "Cliente Abono",
+                "seller_name": "Ana",
+                "ve_ne_estado": "Pago Parcial",
+                "ve_ne_fecha_vencimiento": "2026-11-18",
+                "ve_ne_factura": "SINV-10",
+                "ve_ne_monto_total": 200.0,
+                "ve_ne_monto_pagado": 50.0,
+                "ve_ne_saldo_pendiente": 150.0,
+                "grand_total": 200.0,
+            },
+            {
+                "name": "DN-DUE-TODAY",
+                "docstatus": 1,
+                "posting_date": "2026-11-15",
+                "customer_name": "Cliente Hoy",
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_fecha_vencimiento": "2026-11-23",
+                "grand_total": 80.0,
+            },
+            {
+                "name": "DN-PAID",
+                "docstatus": 1,
+                "posting_date": "2026-11-01",
+                "customer_name": "Cliente Pagado",
+                "ve_ne_estado": "Pagada",
+                "ve_ne_fecha_vencimiento": "2026-11-10",
+                "ve_ne_factura": "SINV-11",
+                "ve_ne_monto_total": 90.0,
+                "ve_ne_monto_pagado": 90.0,
+                "grand_total": 90.0,
+            },
+            {
+                "name": "DN-CANCELLED",
+                "docstatus": 2,
+                "posting_date": "2026-11-01",
+                "customer_name": "Cliente Anulado",
+                "ve_ne_estado": "Cancelada",
+                "ve_ne_fecha_vencimiento": "2026-11-10",
+                "grand_total": 60.0,
+            },
+        ]
+
+        ref_monday = "2026-11-23"
+        summarized = summarize_delivery_notes(notes, reference_date=ref_monday)
+        self.assertEqual(summarized["summary"]["overdue_count"], 2)
+        self.assertEqual(summarized["summary"]["overdue_total"], 270.0)
+
+        overdue = filter_overdue_delivery_notes(notes, reference_date=ref_monday)
+        self.assertEqual([n["name"] for n in overdue], ["DN-OVER-1", "DN-OVER-PARTIAL"])
+        self.assertEqual(overdue[0]["days_overdue"], 13)
+        self.assertEqual(overdue[1]["days_overdue"], 5)
+        self.assertEqual(overdue[1]["remaining_amount"], 150.0)
+
+        email_html = build_overdue_delivery_notes_email_html(overdue, reference_date=ref_monday)
+        self.assertIn("DN-OVER-1", email_html)
+        self.assertIn("DN-OVER-PARTIAL", email_html)
+        self.assertIn("Cliente Moroso", email_html)
+        self.assertIn("$270.00", email_html)
+        self.assertIn("13 días", email_html)
+        self.assertNotIn("DN-PAID", email_html)
+        self.assertNotIn("DN-DUE-TODAY", email_html)
+        self.assertNotIn("DN-CANCELLED", email_html)
+
+    def test_due_date_and_monday_cron_wiring(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        cf_list = json.loads((root / "cima_ve" / "fixtures" / "custom_field.json").read_text(encoding="utf-8"))
+        due_cf = next((f for f in cf_list if f.get("name") == "Delivery Note-ve_ne_fecha_vencimiento"), None)
+        self.assertIsNotNone(due_cf)
+        self.assertEqual(due_cf["fieldtype"], "Date")
+        self.assertEqual(due_cf["reqd"], 1)
+
+        hooks_py = (root / "cima_ve" / "hooks.py").read_text(encoding="utf-8")
+        self.assertIn("0 8 * * 1", hooks_py)
+        self.assertIn("cima_ve.tasks.send_monday_overdue_delivery_notes_alert", hooks_py)
+
+        tasks_py = (root / "cima_ve" / "tasks.py").read_text(encoding="utf-8")
+        self.assertIn("def send_monday_overdue_delivery_notes_alert", tasks_py)
+
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        self.assertIn("cima-due-date", vr_js)
+        self.assertIn("fecha_vencimiento", vr_js)
+
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        self.assertIn("ve_ne_fecha_vencimiento", ne_js)
+        self.assertIn("VENCIDA", ne_js)
+
+        sf_py = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        self.assertIn("ve_ne_fecha_vencimiento", sf_py)
 
 
 class DeliveryNotePermissionTests(unittest.TestCase):
