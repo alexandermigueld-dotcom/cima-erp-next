@@ -58,6 +58,7 @@ class PressClient:
                 "Authorization": self.auth_header,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "User-Agent": "cima-ve-deploy/1.0",
             },
         )
         try:
