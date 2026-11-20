@@ -6,17 +6,17 @@ body[data-path="tienda"] .web-footer,
 }
 
 #cima-storefront {
-  --navy: #131921;
-  --navy-2: #232f3e;
-  --accent: #f59e0b;
-  --accent-hover: #d97706;
-  --bg: #eaeded;
+  --navy: #1c2532;
+  --navy-2: #119689;
+  --accent: #00ada4;
+  --accent-hover: #06c686;
+  --bg: #f4f8f8;
   --card: #ffffff;
-  --text: #0f1111;
-  --muted: #565959;
-  --green: #067d62;
+  --text: #1c2532;
+  --muted: #5c6b73;
+  --green: #06c686;
   --red: #b12704;
-  --border: #d5d9d9;
+  --border: #d9e6e5;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--text);
   background: var(--bg);

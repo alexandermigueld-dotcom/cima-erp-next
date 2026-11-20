@@ -10,12 +10,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  background: linear-gradient(125deg, #1c2532 0%, #162a36 58%, #119689 100%);
   color: #ffffff;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 20px 24px;
   margin-bottom: 20px;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
+  border-bottom: 4px solid #06c686;
+  box-shadow: 0 12px 28px rgba(28, 37, 50, 0.18);
 }
 
 .cima-hero-title h2 {
@@ -39,7 +40,7 @@
 }
 
 .cima-btn-start-invoice {
-  background: #16a34a;
+  background: linear-gradient(135deg, #00ada4 0%, #06c686 100%);
   color: #ffffff !important;
   border: none;
   border-radius: 10px;
@@ -48,12 +49,12 @@
   font-weight: 700;
   letter-spacing: 0.2px;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.35);
-  transition: transform 0.12s ease, background 0.15s ease;
+  box-shadow: 0 6px 16px rgba(0, 173, 164, 0.35);
+  transition: transform 0.12s ease, filter 0.15s ease;
 }
 
 .cima-btn-start-invoice:hover {
-  background: #15803d;
+  filter: brightness(1.06);
   transform: translateY(-1px);
 }
 

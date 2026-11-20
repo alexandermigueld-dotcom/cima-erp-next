@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "autoname": "format:CIMA-BILL-{YYYY}-{#####}",
+ "creation": "2026-11-20 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bill_title",
+  "bill_category",
+  "bill_group",
+  "bill_date",
+  "due_date",
+  "column_break_1",
+  "amount",
+  "currency",
+  "payment_method",
+  "status",
+  "details_section",
+  "supplier_name",
+  "reference_number",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "bill_title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Concepto / Descripción",
+   "reqd": 1
+  },
+  {
+   "fieldname": "bill_category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Tipo de Gasto",
+   "options": "Cima Bill Category",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "bill_category.parent_group",
+   "fieldname": "bill_group",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Grupo",
+   "read_only": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "bill_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Fecha de Gasto",
+   "reqd": 1
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Fecha de Vencimiento"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Monto",
+   "reqd": 1
+  },
+  {
+   "default": "USD",
+   "fieldname": "currency",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Moneda",
+   "options": "USD\nVES",
+   "reqd": 1
+  },
+  {
+   "default": "Contado USD",
+   "fieldname": "payment_method",
+   "fieldtype": "Select",
+   "label": "Método de Pago",
+   "options": "Contado USD\nPago Móvil / Bs\nTransferencia\nZelle\nCashea\nPunto de Venta\nOtro"
+  },
+  {
+   "default": "Pagada",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Estado",
+   "options": "Pagada\nPendiente\nAnulada",
+   "reqd": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Detalles del Proveedor"
+  },
+  {
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Proveedor / Beneficiario"
+  },
+  {
+   "fieldname": "reference_number",
+   "fieldtype": "Data",
+   "label": "Nro. Factura / Referencia"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notas"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-20 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cima VE",
+ "name": "Cima Bill",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "bill_date",
+ "sort_order": "DESC",
+ "states": []
+}

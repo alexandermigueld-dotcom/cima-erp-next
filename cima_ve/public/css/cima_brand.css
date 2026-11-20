@@ -1,0 +1,274 @@
+/* CIMA Electronic VE — Brand Design System
+ * Palette from Manual de Marca:
+ *   Dark Slate:   #1C2532
+ *   Teal Primary: #00ADA4
+ *   Deep Teal:    #119689
+ *   Emerald:      #06C686
+ *   Neon Mint:    #2EFF87
+ *   Charcoal:     #3D3D3D
+ *   Black/White:  #000000 / #FFFFFF
+ */
+
+:root {
+  --cima-dark: #1c2532;
+  --cima-dark-2: #131a24;
+  --cima-teal: #00ada4;
+  --cima-teal-deep: #119689;
+  --cima-emerald: #06c686;
+  --cima-mint: #2eff87;
+  --cima-charcoal: #3d3d3d;
+  --cima-surface: #ffffff;
+  --cima-surface-muted: #f4f8f8;
+  --cima-border: #d9e6e5;
+  --cima-text: #1c2532;
+  --cima-text-muted: #5c6b73;
+  --cima-font-display: "Good Times", "Orbitron", "Rajdhani", "Segoe UI", sans-serif;
+  --cima-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.cima-shell {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 18px 14px 48px;
+  font-family: var(--cima-font-sans);
+  color: var(--cima-text);
+}
+
+.cima-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: linear-gradient(125deg, var(--cima-dark) 0%, #162a36 58%, var(--cima-teal-deep) 100%);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 22px 26px;
+  margin-bottom: 22px;
+  border-bottom: 4px solid var(--cima-emerald);
+  box-shadow: 0 12px 28px rgba(28, 37, 50, 0.18);
+}
+
+.cima-hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.cima-hero-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
+}
+
+.cima-hero-title h2 {
+  margin: 0 0 4px;
+  font-family: var(--cima-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+}
+
+.cima-hero-title p {
+  margin: 0;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.cima-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cima-btn-primary {
+  background: linear-gradient(135deg, var(--cima-teal) 0%, var(--cima-emerald) 100%);
+  color: #ffffff !important;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 173, 164, 0.32);
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+
+.cima-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.cima-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cima-btn-ghost {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.cima-btn-ghost:hover,
+.cima-btn-ghost.active {
+  background: rgba(46, 255, 135, 0.18);
+  border-color: var(--cima-mint);
+}
+
+.cima-btn-cashea {
+  background: #111827;
+  color: #facc15 !important;
+  border: 1px solid #facc15;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.cima-btn-cashea:hover {
+  background: #1f2937;
+  transform: translateY(-1px);
+}
+
+.cima-card {
+  background: var(--cima-surface);
+  border: 1px solid var(--cima-border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 3px 12px rgba(28, 37, 50, 0.05);
+}
+
+.cima-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--cima-dark);
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--cima-surface-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.cima-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.cima-kpi-card {
+  background: var(--cima-surface);
+  border: 1px solid var(--cima-border);
+  border-left: 4px solid var(--cima-teal);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(28, 37, 50, 0.04);
+}
+
+.cima-kpi-card.emerald { border-left-color: var(--cima-emerald); }
+.cima-kpi-card.dark { border-left-color: var(--cima-dark); }
+.cima-kpi-card.danger { border-left-color: #ef4444; }
+.cima-kpi-card.amber { border-left-color: #f59e0b; }
+
+.cima-kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--cima-text-muted);
+  margin-bottom: 6px;
+}
+
+.cima-kpi-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--cima-dark);
+  line-height: 1.15;
+}
+
+.cima-kpi-sub {
+  font-size: 12px;
+  color: var(--cima-text-muted);
+  margin-top: 4px;
+}
+
+.cima-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cima-badge-teal { background: #e0f7f5; color: #0b6e68; }
+.cima-badge-green { background: #dcfce7; color: #166534; }
+.cima-badge-amber { background: #fef3c7; color: #92400e; }
+.cima-badge-red { background: #fee2e2; color: #991b1b; }
+.cima-badge-dark { background: #e2e8f0; color: #1e293b; }
+
+.cima-cashea-qr-card {
+  background: #ffffff;
+  border: 2px solid var(--cima-dark);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.cima-cashea-qr-card img {
+  max-width: 210px;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  margin: 8px auto;
+  display: block;
+}
+
+.cima-cashea-code {
+  display: inline-block;
+  background: var(--cima-dark);
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  padding: 4px 14px;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+@media print {
+  .cima-no-print,
+  .page-head,
+  .navbar {
+    display: none !important;
+  }
+  .cima-shell {
+    max-width: 100%;
+    padding: 0;
+  }
+  .cima-card {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+}

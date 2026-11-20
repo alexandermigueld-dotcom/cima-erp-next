@@ -623,7 +623,16 @@
         <div class="cima-field"><label>Detalles adicionales del pago (Opcional)</label><input id="pay-notes" placeholder="Hora, titular u observación"></div>`;
     }
     if (m.id === "cashea") {
-      extraHtml += `<div style="font-size:13px;font-weight:700;color:#4338ca;">Inicial hoy (40%): ${money(t.cashea.down_payment_usd)} • 3 cuotas de ${money(t.cashea.installment_usd)}</div>`;
+      extraHtml += `
+        <div style="font-size:13px;font-weight:700;color:#119689;margin-bottom:8px;">
+          Inicial hoy (40%): ${money(t.cashea.down_payment_usd)} • 3 cuotas de ${money(t.cashea.installment_usd)}
+        </div>
+        <div style="background:#fff;border:2px solid #1c2532;border-radius:12px;padding:12px;text-align:center;margin-bottom:10px;">
+          <div style="font-weight:700;font-size:13px;color:#1c2532;">Escanea el QR oficial de Cashea</div>
+          <div style="font-size:11px;color:#5c6b73;">Cimaelectronic ve, C.A - Caja 1 • RIF J501934070</div>
+          <img src="/assets/cima_ve/images/cashea-qr.png" alt="QR Cashea GOHAQN" style="max-width:170px;width:100%;border-radius:8px;margin:8px auto;display:block;border:1px solid #e5e7eb;" />
+          <span style="display:inline-block;background:#1c2532;color:#fff;font-family:monospace;font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;font-size:13px;">GOHAQN</span>
+        </div>`;
     }
     detailsEl.innerHTML = extraHtml;
 

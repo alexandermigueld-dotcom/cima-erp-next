@@ -6,7 +6,10 @@ app_email = "cimaelectronic@gmail.com"
 app_license = "MIT"
 
 app_include_js = ["/assets/cima_ve/js/seller_shell.js?v=10"]
-app_include_css = ["/assets/cima_ve/css/seller_shell.css?v=10"]
+app_include_css = [
+    "/assets/cima_ve/css/seller_shell.css?v=10",
+    "/assets/cima_ve/css/cima_brand.css",
+]
 
 role_home_page = {
     "Sales User": "vendedor",
@@ -42,5 +45,8 @@ has_permission = {
 scheduler_events = {
     "hourly": [
         "cima_ve.api.exchange_rates.sync_exchange_rates_job",
-    ]
+    ],
+    "weekly": [
+        "cima_ve.tasks.send_weekly_bi_stockout_alert",
+    ],
 }

@@ -11,6 +11,10 @@
   "cashea_api_key",
   "cashea_webhook_secret",
   "cashea_bridge_account",
+  "cashea_qr_code",
+  "cashea_store_label",
+  "cashea_rif",
+  "cashea_qr_image",
   "fiscal_section",
   "fiscal_enabled",
   "fiscal_provider_name",
@@ -61,7 +65,13 @@
   "assistant_include_repository",
   "assistant_openai_api_key",
   "assistant_anthropic_api_key",
-  "assistant_gemini_api_key"
+  "assistant_gemini_api_key",
+  "bi_section",
+  "china_lead_time_days",
+  "bi_safety_stock_days",
+  "bi_analysis_window_days",
+  "bi_weekly_alerts_enabled",
+  "bi_alert_emails"
  ],
  "fields": [
   {
@@ -102,6 +112,30 @@
    "fieldtype": "Link",
    "label": "Cuenta Puente Cashea",
    "options": "Account"
+  },
+  {
+   "default": "GOHAQN",
+   "fieldname": "cashea_qr_code",
+   "fieldtype": "Data",
+   "label": "Código QR Cashea"
+  },
+  {
+   "default": "Cimaelectronic ve, C.A - Caja 1",
+   "fieldname": "cashea_store_label",
+   "fieldtype": "Data",
+   "label": "Tienda / Caja Cashea"
+  },
+  {
+   "default": "J501934070",
+   "fieldname": "cashea_rif",
+   "fieldtype": "Data",
+   "label": "RIF Comercio Cashea"
+  },
+  {
+   "default": "/assets/cima_ve/images/cashea-qr.png",
+   "fieldname": "cashea_qr_image",
+   "fieldtype": "Data",
+   "label": "Ruta Imagen QR Cashea"
   },
   {
    "fieldname": "fiscal_section",
@@ -406,6 +440,45 @@
    "fieldname": "assistant_gemini_api_key",
    "fieldtype": "Password",
    "label": "Gemini API Key"
+  },
+  {
+   "fieldname": "bi_section",
+   "fieldtype": "Section Break",
+   "label": "Business Intelligence e Importación China"
+  },
+  {
+   "default": "45",
+   "description": "Tiempo estimado en días desde que se ordena mercancía en China hasta que llega al inventario.",
+   "fieldname": "china_lead_time_days",
+   "fieldtype": "Int",
+   "label": "Tiempo de Llegada desde China (días)"
+  },
+  {
+   "default": "15",
+   "description": "Días adicionales de stock de seguridad recomendados al calcular pedidos.",
+   "fieldname": "bi_safety_stock_days",
+   "fieldtype": "Int",
+   "label": "Stock de Seguridad (días)"
+  },
+  {
+   "default": "90",
+   "description": "Cantidad de días históricos de ventas usados para calcular la velocidad de rotación.",
+   "fieldname": "bi_analysis_window_days",
+   "fieldtype": "Int",
+   "label": "Ventana de Análisis de Demanda (días)"
+  },
+  {
+   "default": "1",
+   "fieldname": "bi_weekly_alerts_enabled",
+   "fieldtype": "Check",
+   "label": "Enviar Alertas Semanales de Reposición por Email"
+  },
+  {
+   "default": "cimaelectronic@gmail.com",
+   "description": "Correos destinatarios separados por coma (,).",
+   "fieldname": "bi_alert_emails",
+   "fieldtype": "Data",
+   "label": "Correos para Alertas Semanales BI"
   }
  ],
  "issingle": 1,

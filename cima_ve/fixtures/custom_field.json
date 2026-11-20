@@ -628,5 +628,27 @@
   "name": "Delivery Note-ve_ne_monto_pagado_bs",
   "precision": "2",
   "read_only": 1
+ },
+ {
+  "default": "Tienda / Detal",
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_sales_channel",
+  "fieldtype": "Select",
+  "insert_after": "cashea_down_payment",
+  "label": "Canal de Venta",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_sales_channel",
+  "options": "Tienda / Detal\nMayor\nMeta Ads\nWhatsApp\nOtro"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Sales Invoice",
+  "fieldname": "ve_payment_method",
+  "fieldtype": "Data",
+  "insert_after": "ve_sales_channel",
+  "label": "Método de Pago Cima",
+  "module": "Cima VE",
+  "name": "Sales Invoice-ve_payment_method"
  }
 ]

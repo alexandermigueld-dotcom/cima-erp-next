@@ -1,0 +1,89 @@
+{
+ "actions": [],
+ "autoname": "field:category_name",
+ "creation": "2026-11-20 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "category_name",
+  "parent_group",
+  "is_active",
+  "default_account",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "category_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nombre del Tipo de Gasto",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Operativos",
+   "fieldname": "parent_group",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Grupo de Clasificación",
+   "options": "Operativos\nLogística e Importación\nMarketing y Meta Ads\nNómina y Personal\nImpuestos y Legales\nServicios Públicos\nOtros",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Activo"
+  },
+  {
+   "fieldname": "default_account",
+   "fieldtype": "Link",
+   "label": "Cuenta Contable Asociada",
+   "options": "Account"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Descripción"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-20 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cima VE",
+ "name": "Cima Bill Category",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "category_name",
+ "sort_order": "ASC",
+ "states": []
+}

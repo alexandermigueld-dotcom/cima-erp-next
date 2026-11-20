@@ -61,13 +61,19 @@ class CimaSellerPortal {
 		const html = `
 			<div class="cima-seller-shell">
 				<div class="cima-hero-bar">
-					<div class="cima-hero-title">
-						<h2>Facturación Rápida</h2>
-						<p>Emite notas de entrega y consulta inventario y precios.</p>
+					<div class="cima-hero-brand">
+						<img src="/assets/cima_ve/images/cima-logo-blanco.png" alt="CIMA" class="cima-hero-logo" onerror="this.style.display='none'" />
+						<div class="cima-hero-title">
+							<h2>Facturación Rápida</h2>
+							<p>Emite notas de entrega y consulta inventario y precios.</p>
+						</div>
 					</div>
 					<div class="cima-hero-actions">
 						<button type="button" class="cima-btn-start-invoice" data-action="start-invoice">
 							+ Nota de Entrega
+						</button>
+						<button type="button" class="cima-btn-cashea" data-action="show-cashea-qr">
+							QR Cashea
 						</button>
 						<button type="button" class="cima-btn-inventory" data-action="tab-inventory">
 							Ver Inventario y Precios
@@ -206,6 +212,32 @@ class CimaSellerPortal {
 		this.wrapper.find(".layout-main-section").html(html);
 	}
 
+	showCasheaQrModal() {
+		const d = new frappe.ui.Dialog({
+			title: "Pago con Cashea — Código QR Oficial",
+			fields: [
+				{
+					fieldtype: "HTML",
+					options: `
+						<div class="cima-cashea-qr-card" style="margin-top:0;">
+							<div style="font-weight:700;font-size:15px;color:#1c2532;">Cimaelectronic ve, C.A - Caja 1</div>
+							<div style="font-size:12px;color:#5c6b73;margin-bottom:6px;">RIF: J501934070</div>
+							<img src="/assets/cima_ve/images/cashea-qr.png" alt="Código QR Cashea GOHAQN" />
+							<div style="font-size:12px;color:#5c6b73;margin-top:6px;">Código de comercio Cashea</div>
+							<div class="cima-cashea-code">GOHAQN</div>
+							<div style="font-size:12px;color:#475569;margin-top:10px;">
+								El cliente escanea este QR desde la app de Cashea o ingresa el código <strong>GOHAQN</strong>.
+							</div>
+						</div>
+					`,
+				},
+			],
+			primary_action_label: "Cerrar",
+			primary_action: () => d.hide(),
+		});
+		d.show();
+	}
+
 	bindEvents() {
 		const root = this.wrapper;
 
@@ -231,6 +263,10 @@ class CimaSellerPortal {
 		root.on("click", "[data-action='open-metrics']", () => {
 			if (!this.isAdmin()) return;
 			frappe.set_route("metricas-ventas");
+		});
+
+		root.on("click", "[data-action='show-cashea-qr']", () => {
+			this.showCasheaQrModal();
 		});
 
 		root.on("click", "[data-action='open-product-loader']", () => {
