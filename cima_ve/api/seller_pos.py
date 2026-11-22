@@ -195,7 +195,7 @@ def search_inventory_and_prices(
 
 @whitelist()
 def search_customers(query: str = "", limit: int = 20) -> list[dict]:
-    """Busca clientes por nombre, código o RIF/Cédula."""
+    """Busca clientes por nombre, código, correo o RIF/Cédula."""
     import frappe
 
     q = (query or "").strip()
@@ -204,7 +204,7 @@ def search_customers(query: str = "", limit: int = 20) -> list[dict]:
         return frappe.get_all(
             "Customer",
             filters={"disabled": 0},
-            fields=["name", "customer_name", "tax_id", "ve_rif_cedula"],
+            fields=["name", "customer_name", "tax_id", "ve_rif_cedula", "email_id"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -212,7 +212,7 @@ def search_customers(query: str = "", limit: int = 20) -> list[dict]:
     like = f"%{q}%"
     return frappe.db.sql(
         """
-        SELECT name, customer_name, tax_id, ve_rif_cedula
+        SELECT name, customer_name, tax_id, ve_rif_cedula, email_id
         FROM `tabCustomer`
         WHERE disabled = 0
           AND (
@@ -220,6 +220,7 @@ def search_customers(query: str = "", limit: int = 20) -> list[dict]:
               OR customer_name LIKE %(q)s
               OR COALESCE(tax_id, '') LIKE %(q)s
               OR COALESCE(ve_rif_cedula, '') LIKE %(q)s
+              OR COALESCE(email_id, '') LIKE %(q)s
           )
         ORDER BY customer_name ASC
         LIMIT %(limit)s
@@ -234,16 +235,20 @@ def quick_create_customer(
     customer_name: str,
     rif_cedula: str,
     taxpayer_type: str = "No Contribuyente",
+    email: str = "",
 ) -> dict:
-    """Crea un cliente rápido desde la pantalla de facturación."""
+    """Crea un cliente rápido desde la pantalla de facturación (con correo obligatorio)."""
     import frappe
 
     name_clean = (customer_name or "").strip()
     rif_clean = (rif_cedula or "").strip().upper()
+    email_clean = (email or "").strip().lower()
     if not name_clean:
         frappe.throw("El nombre o razón social del cliente es obligatorio.")
     if not rif_clean:
         frappe.throw("La Cédula o RIF del cliente es obligatoria.")
+    if not email_clean or "@" not in email_clean or "." not in email_clean.split("@")[-1]:
+        frappe.throw("El correo electrónico del cliente es obligatorio y debe ser válido.")
 
     doc = frappe.get_doc(
         {
@@ -253,13 +258,29 @@ def quick_create_customer(
             "tax_id": rif_clean,
             "ve_rif_cedula": rif_clean,
             "ve_taxpayer_type": taxpayer_type or "No Contribuyente",
+            "email_id": email_clean,
         }
     )
     doc.insert()
+    try:
+        contact = frappe.get_doc(
+            {
+                "doctype": "Contact",
+                "first_name": name_clean[:140],
+                "email_ids": [{"email_id": email_clean, "is_primary": 1}],
+                "links": [{"link_doctype": "Customer", "link_name": doc.name}],
+            }
+        )
+        contact.insert(ignore_permissions=True)
+        doc.db_set("customer_primary_contact", contact.name, update_modified=False)
+    except Exception:
+        pass
+
     return {
         "name": doc.name,
         "customer_name": doc.customer_name,
         "ve_rif_cedula": doc.ve_rif_cedula,
+        "email_id": email_clean,
     }
 
 

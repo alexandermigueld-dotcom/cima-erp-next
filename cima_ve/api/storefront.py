@@ -46,10 +46,23 @@ def _get_storefront_config() -> dict:
     companies = frappe.get_all("Company", pluck="name", order_by="creation asc", limit=1)
     company = companies[0] if companies else ""
 
+    all_selling_pls = frappe.get_all(
+        "Price List",
+        filters={"selling": 1, "enabled": 1},
+        pluck="name",
+        order_by="name asc",
+        limit=50,
+    )
+    mayorista_pl = next(
+        (pl for pl in all_selling_pls if "mayor" in pl.lower() and "usd" in pl.lower()),
+        next((pl for pl in all_selling_pls if "mayor" in pl.lower()), price_list),
+    )
+
     return {
         "company": company,
         "warehouse": default_wh,
         "price_list": price_list,
+        "mayorista_price_list": mayorista_pl,
         "simulation_mode": bool(settings.simulation_mode),
         "cashea_enabled": bool(settings.cashea_enabled),
         "iva_rate": float(settings.iva_rate or 16.0),
@@ -253,16 +266,24 @@ def _get_customer_profile_dict(user_email: str) -> dict:
             "ve_taxpayer_type": "No Contribuyente",
             "phone": "",
             "address": "",
+            "is_mayorista": False,
         }
 
-    user_doc = frappe.db.get_value("User", user_email, ["full_name", "user_image"], as_dict=True) or {}
+    user_fields = ["full_name", "user_image"]
+    if frappe.get_meta("User").has_field("ve_es_mayorista"):
+        user_fields.append("ve_es_mayorista")
+    user_doc = frappe.db.get_value("User", user_email, user_fields, as_dict=True) or {}
     customer_name = _ensure_customer_for_user(user_email, full_name=user_doc.get("full_name") or "")
+    cust_fields = ["customer_name", "ve_rif_cedula", "ve_taxpayer_type", "mobile_no"]
+    if frappe.get_meta("Customer").has_field("ve_es_mayorista"):
+        cust_fields.append("ve_es_mayorista")
     cust = frappe.db.get_value(
         "Customer",
         customer_name,
-        ["customer_name", "ve_rif_cedula", "ve_taxpayer_type", "mobile_no"],
+        cust_fields,
         as_dict=True,
     ) or {}
+    is_mayorista = bool(int(cust.get("ve_es_mayorista") or 0) or int(user_doc.get("ve_es_mayorista") or 0))
 
     address_text = ""
     addr_links = frappe.get_all(
@@ -284,6 +305,7 @@ def _get_customer_profile_dict(user_email: str) -> dict:
         "ve_taxpayer_type": cust.get("ve_taxpayer_type") or "No Contribuyente",
         "phone": cust.get("mobile_no") or "",
         "address": address_text,
+        "is_mayorista": is_mayorista,
     }
 
 
@@ -314,6 +336,9 @@ def get_storefront_bootstrap() -> dict:
     except Exception:
         exchange_rate = {"bcv_rate": 0.0, "monitor_rate": 0.0, "binance_usdt_rate": 0.0, "applied_brecha_pct": 0.0, "adjusted_rate": 0.0}
 
+    primary_contact_email = (cfg["notify_order_email"].split(",")[0] or "cimaelectronic@gmail.com").strip()
+    contact_wa = cfg["notify_whatsapp_number"]
+
     return {
         "user": user_profile,
         "auth": auth,
@@ -321,16 +346,22 @@ def get_storefront_bootstrap() -> dict:
         "payment_methods": build_payment_methods_catalog(cfg),
         "delivery_providers": cfg["delivery_providers"],
         "exchange_rate": exchange_rate,
+        "contact": {
+            "email": primary_contact_email,
+            "whatsapp": contact_wa,
+            "whatsapp_url": build_whatsapp_link(contact_wa, "Hola CIMA Electronic VE, necesito información sobre productos o acceso mayorista."),
+        },
         "settings": {
             "company": cfg["company"],
             "warehouse": cfg["warehouse"],
             "price_list": cfg["price_list"],
+            "mayorista_price_list": cfg["mayorista_price_list"],
             "currency": "USD",
             "iva_rate": cfg["iva_rate"],
             "igtf_rate": cfg["igtf_rate"],
             "simulation_mode": cfg["simulation_mode"],
             "default_image": DEFAULT_PRODUCT_IMAGE,
-            "notify_whatsapp_number": cfg["notify_whatsapp_number"],
+            "notify_whatsapp_number": contact_wa,
         },
     }
 
@@ -343,11 +374,14 @@ def get_catalog(
     sort: str = "stock_desc",
     page: int = 1,
     page_size: int = 24,
+    price_mode: str = "detal",
 ) -> dict:
-    """Lista productos con stock real en almacén, precios Detal USD e imagen fallback."""
+    """Lista productos con stock real en almacén, precios Detal/Mayorista USD e imagen fallback."""
     import frappe
 
     cfg = _get_storefront_config()
+    clean_mode = (price_mode or "detal").strip().lower()
+    active_price_list = cfg["mayorista_price_list"] if clean_mode == "mayorista" else cfg["price_list"]
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 24), 1), 60)
     offset = (page - 1) * page_size
@@ -355,7 +389,7 @@ def get_catalog(
     conditions = ["i.disabled = 0", "i.is_sales_item = 1"]
     params: dict = {
         "warehouse": cfg["warehouse"],
-        "price_list": cfg["price_list"],
+        "price_list": active_price_list,
         "limit": page_size,
         "offset": offset,
     }
@@ -455,12 +489,15 @@ def preview_storefront_cart(
     items: str | list[dict],
     payment_method: str = "cashea",
     delivery_provider: str = "",
+    price_mode: str = "detal",
 ) -> dict:
     """Calcula precios reales (con Pricing Rules), IVA, IGTF y costo de envío para el carrito de tienda."""
     import frappe
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
     cfg = _get_storefront_config()
+    clean_mode = (price_mode or "detal").strip().lower()
+    active_price_list = cfg["mayorista_price_list"] if clean_mode == "mayorista" else cfg["price_list"]
     provider = resolve_delivery_provider(delivery_provider, cfg["delivery_providers"])
     shipping_cost = float(provider.get("cost") or 0.0) if parsed_items else 0.0
 
@@ -485,8 +522,8 @@ def preview_storefront_cart(
                 {
                     "item_code": item_code,
                     "company": cfg["company"],
-                    "selling_price_list": cfg["price_list"],
-                    "price_list": cfg["price_list"],
+                    "selling_price_list": active_price_list,
+                    "price_list": active_price_list,
                     "currency": "USD",
                     "qty": qty,
                     "warehouse": cfg["warehouse"],
@@ -813,13 +850,14 @@ def place_storefront_order(
     payment_details: str | dict | None = None,
     customer_info: str | dict | None = None,
     delivery_provider: str = "",
+    price_mode: str = "detal",
 ) -> dict:
     """Crea una Nota de Entrega (Delivery Note) desde /tienda con comprobante, envío y notificación Email/WhatsApp."""
     import frappe
 
     original_user = frappe.session.user
     if original_user != "Guest":
-        return _place_storefront_order_impl(items, payment_method, payment_details, customer_info, delivery_provider)
+        return _place_storefront_order_impl(items, payment_method, payment_details, customer_info, delivery_provider, price_mode=price_mode)
 
     frappe.set_user("Administrator")
     try:
@@ -830,6 +868,7 @@ def place_storefront_order(
             customer_info,
             delivery_provider,
             original_user=original_user,
+            price_mode=price_mode,
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Cima VE Storefront Order Error")
@@ -845,6 +884,7 @@ def _place_storefront_order_impl(
     customer_info: str | dict | None = None,
     delivery_provider: str = "",
     original_user: str = "",
+    price_mode: str = "detal",
 ) -> dict:
     import frappe
     from cima_ve.api.delivery_notes import _get_auto_discount_config, send_delivery_note_created_notifications
@@ -918,6 +958,21 @@ def _place_storefront_order_impl(
 
     method_catalog = {m["id"]: m["label"] for m in build_payment_methods_catalog(cfg)}
     method_label = method_catalog.get(payment_method, payment_method)
+
+    clean_price_mode = (price_mode or "detal").strip().lower()
+    if clean_price_mode == "mayorista":
+        cust_is_may = bool(int(frappe.db.get_value("Customer", customer_name, "ve_es_mayorista") or 0)) if frappe.get_meta("Customer").has_field("ve_es_mayorista") else False
+        user_is_may = (
+            bool(int(frappe.db.get_value("User", user_email, "ve_es_mayorista") or 0))
+            if user_email != "Guest" and frappe.get_meta("User").has_field("ve_es_mayorista")
+            else False
+        )
+        if user_email == "Guest" or not (cust_is_may or user_is_may):
+            frappe.throw(
+                "Solo los clientes registrados como Mayorista pueden realizar pedidos con precios de mayorista. "
+                "Por favor contáctanos para solicitar tu activación como mayorista."
+            )
+    active_price_list = cfg["mayorista_price_list"] if clean_price_mode == "mayorista" else cfg["price_list"]
     ref_code = (pay_details.get("reference") or "").strip()
     bank_info = (pay_details.get("bank") or "").strip()
     screenshot_url = (pay_details.get("screenshot_url") or "").strip()
@@ -964,7 +1019,7 @@ def _place_storefront_order_impl(
             "company": cfg["company"],
             "customer": customer_name,
             "currency": "USD",
-            "selling_price_list": cfg["price_list"] or None,
+            "selling_price_list": active_price_list or None,
             "set_warehouse": cfg["warehouse"] or None,
             "ignore_pricing_rule": 0,
             "ve_vendedor_usuario": None,
@@ -1000,7 +1055,7 @@ def _place_storefront_order_impl(
     if dn.meta.has_field("ve_ne_cliente_telefono"):
         dn.ve_ne_cliente_telefono = effective_phone
 
-    _apply_required_sales_metadata(dn, sales_channel="Detal")
+    _apply_required_sales_metadata(dn, sales_channel="Mayor" if clean_price_mode == "mayorista" else "Detal")
     dn.run_method("set_missing_values")
     dn.run_method("calculate_taxes_and_totals")
 

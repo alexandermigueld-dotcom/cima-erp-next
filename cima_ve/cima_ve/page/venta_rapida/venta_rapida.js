@@ -113,6 +113,10 @@ class CimaSellerPortal {
 									<option value="">-- Seleccionar cliente --</option>
 								</select>
 							</div>
+							<div class="cima-search-row" style="margin-top:-4px;margin-bottom:8px;">
+								<input type="email" id="cima-customer-email" class="form-control input-sm"
+									placeholder="Correo electrónico del cliente (obligatorio para Nota de Entrega)" required />
+							</div>
 
 							<div class="cima-search-row">
 								<select id="cima-price-list" class="form-control" style="max-width: 220px;"></select>
@@ -324,6 +328,8 @@ class CimaSellerPortal {
 
 		root.on("change", "#cima-customer-select", (e) => {
 			this.state.selectedCustomer = $(e.target).val() || null;
+			const optEmail = $(e.target).find("option:selected").attr("data-email") || "";
+			this.wrapper.find("#cima-customer-email").val(optEmail);
 			this.renderCart();
 			this.refreshCartPricing();
 		});
@@ -548,13 +554,18 @@ class CimaSellerPortal {
 					rows
 						.map((c) => {
 							const rif = c.ve_rif_cedula || c.tax_id || "Sin RIF";
-							return `<option value="${frappe.utils.escape_html(c.name)}">${frappe.utils.escape_html(c.customer_name)} (${frappe.utils.escape_html(rif)})</option>`;
+							const em = c.email_id || "";
+							return `<option value="${frappe.utils.escape_html(c.name)}" data-email="${frappe.utils.escape_html(em)}">${frappe.utils.escape_html(c.customer_name)} (${frappe.utils.escape_html(rif)})</option>`;
 						})
 						.join("");
 				const select = this.wrapper.find("#cima-customer-select");
 				select.html(options);
 				if (this.state.selectedCustomer) {
 					select.val(this.state.selectedCustomer);
+					const optEmail = select.find("option:selected").attr("data-email") || "";
+					if (optEmail && !this.wrapper.find("#cima-customer-email").val()) {
+						this.wrapper.find("#cima-customer-email").val(optEmail);
+					}
 				}
 			},
 		});
@@ -991,6 +1002,7 @@ class CimaSellerPortal {
 			fields: [
 				{ label: "Nombre / Razón Social", fieldname: "customer_name", fieldtype: "Data", reqd: 1 },
 				{ label: "Cédula o RIF", fieldname: "rif_cedula", fieldtype: "Data", reqd: 1, description: "Ej: V-12345678 o J-12345678-9" },
+				{ label: "Correo Electrónico", fieldname: "email", fieldtype: "Data", reqd: 1, description: "Obligatorio para enviar la Nota de Entrega" },
 				{
 					label: "Tipo de Contribuyente",
 					fieldname: "taxpayer_type",
@@ -1007,6 +1019,7 @@ class CimaSellerPortal {
 					callback: (r) => {
 						if (r.message) {
 							this.state.selectedCustomer = r.message.name;
+							this.wrapper.find("#cima-customer-email").val(r.message.email_id || values.email || "");
 							this.loadCustomers("");
 							this.renderCart();
 							d.hide();
@@ -1024,6 +1037,12 @@ class CimaSellerPortal {
 			frappe.msgprint("Selecciona un cliente y al menos un producto.");
 			return;
 		}
+		const customerEmail = (this.wrapper.find("#cima-customer-email").val() || "").trim();
+		if (!customerEmail || !customerEmail.includes("@")) {
+			frappe.msgprint("El correo electrónico del cliente es obligatorio para emitir la Nota de Entrega.");
+			this.wrapper.find("#cima-customer-email").focus();
+			return;
+		}
 		const dueDate = (this.state.dueDate || this.wrapper.find("#cima-due-date").val() || "").trim();
 		if (!dueDate) {
 			frappe.msgprint("Debes indicar la Fecha de Vencimiento de la Nota de Entrega.");
@@ -1038,6 +1057,7 @@ class CimaSellerPortal {
 			method: "cima_ve.api.delivery_notes.create_quick_delivery_note",
 			args: {
 				customer: this.state.selectedCustomer,
+				customer_email: customerEmail,
 				items: JSON.stringify(this.state.cart),
 				price_list: this.state.priceList,
 				warehouse: this.state.warehouse,

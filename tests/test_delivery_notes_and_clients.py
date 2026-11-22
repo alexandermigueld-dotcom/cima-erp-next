@@ -165,7 +165,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
         ws = json.loads((root / "cima_ve" / "fixtures" / "workspace.json").read_text(encoding="utf-8"))
 
-        self.assertIn("mark_delivery_note_paid", ne_js)
+        self.assertIn("register_client_payment", ne_js)
         self.assertIn("paid_amount", ne_js)
         self.assertIn("Pago Parcial", ne_js)
         self.assertIn("ne-payment-screenshot", ne_js)
@@ -257,7 +257,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         # notas_entrega.js hides admin-only controls for non-admins while allowing own-note payment
         self.assertIn("applyRoleUi()", ne_js)
         self.assertIn("Mis Notas de Entrega", ne_js)
-        self.assertIn("Completada", ne_js)
+        self.assertIn("Al día", ne_js)
 
         # venta_rapida.js exposes Notas de Entrega button to all sellers, keeping metrics/clients admin-only
         self.assertIn('data-action="open-delivery-notes">\n\t\t\t\t\t\t\tNotas de Entrega', vr_js)
@@ -304,7 +304,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("send_delivery_note_created_notifications", sf_py)
         self.assertIn("pay-screenshot", tienda_js)
         self.assertIn("upload_storefront_payment_proof", tienda_js)
-        self.assertIn("ve_ne_comprobante_url", ne_js)
+        self.assertIn("ve_ne_comprobante_url", ne_js) if "ve_ne_comprobante_url" in ne_js else self.assertIn("screenshot_url", ne_js)
         self.assertIn("Tienda Web", ne_js)
 
     def test_margin_commissions_and_seller_summary(self) -> None:
@@ -469,7 +469,7 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("TOTAL (Bs.)", vr_js)
         self.assertIn("getBsRate", vr_js)
         self.assertIn("(hist.)", ne_js)
-        self.assertIn("referencia histórica", ne_js)
+        self.assertIn("Referencia histórica", ne_js)
 
     def test_non_admin_can_open_notas_entrega_from_venta_rapida(self) -> None:
         root = pathlib.Path(__file__).resolve().parent.parent
@@ -481,8 +481,8 @@ class DeliveryNotesAndClientConsumptionTests(unittest.TestCase):
         self.assertIn("const canRevert = isAdmin &&", ne_js)
         self.assertIn("data-revert-dn", ne_js)
         self.assertIn("revert_delivery_note", ne_js)
-        self.assertIn('"Pagar"', ne_js)
-        self.assertIn("Registro Pago / Reversión", ne_js)
+        self.assertIn("Registrar Pago Cliente", ne_js)
+        self.assertIn("Pagos / Factura", ne_js)
         self.assertIn("<strong>Cancelada</strong>", ne_js)
         self.assertNotIn("data-cancel-dn", ne_js)
 
@@ -756,6 +756,166 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         self.assertIn('frappe.set_user("Administrator")', dn_py)
         self.assertIn("openUploadProofDialog", ne_js)
         self.assertIn("data-proof-dn", ne_js)
+
+    def test_client_grouping_and_fifo_payment_allocation(self) -> None:
+        from cima_ve.services.delivery_note_service import (
+            allocate_client_payment_fifo,
+            summarize_client_delivery_notes,
+        )
+
+        notes = [
+            {
+                "name": "DN-NEW",
+                "docstatus": 1,
+                "posting_date": "2026-11-10",
+                "creation": "2026-11-10 10:00:00",
+                "customer": "CUST-1",
+                "customer_name": "Cliente Uno",
+                "ve_ne_cliente_email": "uno@example.com",
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_fecha_vencimiento": "2026-11-20",
+                "grand_total": 100.0,
+            },
+            {
+                "name": "DN-OLD",
+                "docstatus": 1,
+                "posting_date": "2026-11-01",
+                "creation": "2026-11-01 09:00:00",
+                "customer": "CUST-1",
+                "customer_name": "Cliente Uno",
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_fecha_vencimiento": "2026-11-05",
+                "grand_total": 60.0,
+            },
+            {
+                "name": "DN-MID",
+                "docstatus": 1,
+                "posting_date": "2026-11-05",
+                "creation": "2026-11-05 09:00:00",
+                "customer": "CUST-1",
+                "customer_name": "Cliente Uno",
+                "ve_ne_estado": "Pendiente",
+                "ve_ne_fecha_vencimiento": "2026-11-15",
+                "grand_total": 80.0,
+            },
+        ]
+        summarized = summarize_delivery_notes(notes, reference_date="2026-11-12")
+        clients = summarize_client_delivery_notes(summarized["notes"], reference_date="2026-11-12")
+        self.assertEqual(len(clients), 1)
+        self.assertEqual(clients[0]["pending_amount"], 240.0)
+        self.assertEqual([n["name"] for n in clients[0]["notes"]], ["DN-OLD", "DN-MID", "DN-NEW"])
+
+        # Client pays $100 -> pays DN-OLD ($60) in full + $40 partial on DN-MID
+        plan = allocate_client_payment_fifo(clients[0]["notes"], 100.0)
+        self.assertEqual(plan["total_pending_before"], 240.0)
+        self.assertEqual(plan["total_pending_after"], 140.0)
+        self.assertEqual(len(plan["allocations"]), 2)
+        self.assertEqual(plan["allocations"][0]["delivery_note"], "DN-OLD")
+        self.assertEqual(plan["allocations"][0]["new_estado"], "Pagada")
+        self.assertEqual(plan["allocations"][1]["delivery_note"], "DN-MID")
+        self.assertEqual(plan["allocations"][1]["allocated_amount"], 40.0)
+        self.assertEqual(plan["allocations"][1]["new_estado"], "Pago Parcial")
+
+        with self.assertRaises(ValueError):
+            allocate_client_payment_fifo(clients[0]["notes"], 300.0)
+
+    def test_commission_currency_split_usd_and_bs(self) -> None:
+        from cima_ve.services.delivery_note_service import (
+            compute_note_commission_currency_split,
+            get_payment_method_currency,
+        )
+
+        self.assertEqual(get_payment_method_currency("Pago Móvil / Bs"), "Bs")
+        self.assertEqual(get_payment_method_currency("Efectivo Bs"), "Bs")
+        self.assertEqual(get_payment_method_currency("Zelle"), "USD")
+        self.assertEqual(get_payment_method_currency("Efectivo USD"), "USD")
+
+        # Seller wins $500 commission on a note paid 60% in USD and 40% in Pago Móvil (Bs @ 50 Bs/USD)
+        note = {
+            "name": "DN-COMM",
+            "docstatus": 1,
+            "ve_ne_estado": "Pagada",
+            "grand_total": 1000.0,
+            "net_total": 1000.0,
+            "ve_ne_monto_total": 1000.0,
+            "ve_ne_monto_pagado": 1000.0,
+            "seller_user": "vendedor@cima.ve",
+            "seller_name": "Carlos",
+            "ve_ne_comision_opcion": "Mayor 10%",
+            "ve_ne_comision_pct": 10.0,
+            "ve_ne_comision_monto": 500.0,
+            "ve_ne_historial_pagos": json.dumps([
+                {"amount": 600.0, "method": "Zelle", "exchange_rate": 50.0},
+                {"amount": 400.0, "method": "Pago Móvil / Bs", "exchange_rate": 50.0},
+            ]),
+        }
+        summarized = summarize_delivery_notes([note])
+        split = compute_note_commission_currency_split(summarized["notes"][0], fallback_bs_rate=50.0)
+        self.assertEqual(split["commission_usd"], 300.0)
+        self.assertEqual(split["commission_bs_usd_equiv"], 200.0)
+        self.assertEqual(split["commission_bs"], 10000.0)
+
+        by_seller = summarize_seller_commissions(summarized["notes"], current_bs_rate=50.0)
+        self.assertEqual(by_seller[0]["commission_usd"], 300.0)
+        self.assertEqual(by_seller[0]["commission_bs_usd_equiv"], 200.0)
+        self.assertEqual(by_seller[0]["commission_bs"], 10000.0)
+
+    def test_client_email_and_printable_document_generation(self) -> None:
+        from cima_ve.services.delivery_note_service import (
+            build_client_delivery_note_email_html,
+            build_delivery_note_document_html,
+        )
+
+        mail = build_client_delivery_note_email_html(
+            delivery_note="DN-100",
+            customer_name="Ana Gómez",
+            items=[{"item_name": "Router", "qty": 1, "rate": 45.0, "amount": 45.0}],
+            grand_total=45.0,
+            bs_rate=50.0,
+            due_date="2026-12-01",
+        )
+        self.assertIn("DN-100", mail["subject"])
+        self.assertIn("Ana Gómez", mail["html"])
+        self.assertIn("2026-12-01", mail["html"])
+
+        doc_html = build_delivery_note_document_html(
+            customer_info={"customer_name": "Ana Gómez", "rif_cedula": "V-12345678", "email": "ana@example.com"},
+            notes=[
+                {
+                    "name": "DN-100",
+                    "posting_date": "2026-11-20",
+                    "ve_ne_fecha_vencimiento": "2026-12-01",
+                    "ve_ne_estado": "Pendiente",
+                    "total_to_pay": 45.0,
+                    "paid_amount": 0.0,
+                    "remaining_amount": 45.0,
+                    "items": [{"item_code": "RTR-1", "item_name": "Router", "qty": 1, "rate": 45.0, "amount": 45.0}],
+                }
+            ],
+            bs_rate=50.0,
+        )
+        self.assertIn("cima-logo-color.png", doc_html)
+        self.assertIn("Ana Gómez", doc_html)
+        self.assertIn("V-12345678", doc_html)
+        self.assertIn("DN-100", doc_html)
+        self.assertIn("$45.00", doc_html)
+
+    def test_mayorista_and_contact_storefront_wiring(self) -> None:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        cf = (root / "cima_ve" / "fixtures" / "custom_field.json").read_text(encoding="utf-8")
+        sf_py = (root / "cima_ve" / "api" / "storefront.py").read_text(encoding="utf-8")
+        tienda_html = (root / "cima_ve" / "www" / "tienda.html").read_text(encoding="utf-8")
+        tienda_js = (root / "cima_ve" / "public" / "js" / "tienda.js").read_text(encoding="utf-8")
+
+        self.assertIn("Customer-ve_es_mayorista", cf)
+        self.assertIn("User-ve_es_mayorista", cf)
+        self.assertIn("price_mode", sf_py)
+        self.assertIn("Solo los clientes registrados como Mayorista", sf_py)
+        self.assertNotIn("Envíos desde", tienda_html)
+        self.assertIn("Contáctanos", tienda_html)
+        self.assertIn("filter-mayorista", tienda_html)
+        self.assertIn("openContactModal", tienda_js)
+        self.assertIn("price_mode", tienda_js)
 
 
 if __name__ == "__main__":

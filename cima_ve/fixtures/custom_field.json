@@ -661,5 +661,29 @@
   "label": "Método de Pago Cima",
   "module": "Cima VE",
   "name": "Sales Invoice-ve_payment_method"
+ },
+ {
+  "default": "0",
+  "description": "Indica si el cliente tiene acceso a precios Mayorista en /tienda.",
+  "doctype": "Custom Field",
+  "dt": "Customer",
+  "fieldname": "ve_es_mayorista",
+  "fieldtype": "Check",
+  "insert_after": "ve_taxpayer_type",
+  "label": "Es Mayorista",
+  "module": "Cima VE",
+  "name": "Customer-ve_es_mayorista"
+ },
+ {
+  "default": "0",
+  "description": "Indica si el usuario registrado en /tienda tiene perfil Mayorista.",
+  "doctype": "Custom Field",
+  "dt": "User",
+  "fieldname": "ve_es_mayorista",
+  "fieldtype": "Check",
+  "insert_after": "user_type",
+  "label": "Es Mayorista (/tienda)",
+  "module": "Cima VE",
+  "name": "User-ve_es_mayorista"
  }
 ]

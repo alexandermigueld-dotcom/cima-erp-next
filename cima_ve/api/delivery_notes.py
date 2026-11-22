@@ -8,18 +8,24 @@ from cima_ve.services.delivery_note_service import (
     DEFAULT_COMMISSION_RULES,
     DEFAULT_NOTIFICATION_EMAILS,
     DEFAULT_NOTIFICATION_WHATSAPP,
+    allocate_client_payment_fifo,
     append_payment_history,
+    build_client_delivery_note_email_html,
+    build_delivery_note_document_html,
     build_delivery_note_notification_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_historical_bs_payment,
     compute_margin_commission,
+    compute_note_commission_currency_split,
     compute_partial_payment_state,
+    get_payment_method_currency,
     is_cash_payment_method,
     is_non_commission_channel,
     parse_auto_discount_tiers,
     parse_commission_rules,
     resolve_commission_rule,
+    summarize_client_delivery_notes,
     summarize_delivery_notes,
     summarize_seller_commissions,
     validate_due_date,
@@ -196,6 +202,34 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Email Notification Error")
 
+    client_email = (
+        getattr(doc, "ve_ne_cliente_email", None)
+        or extra.get("customer_email")
+        or ""
+    ).strip()
+    client_email_sent = False
+    if client_email and "@" in client_email:
+        try:
+            client_mail = build_client_delivery_note_email_html(
+                delivery_note=doc.name,
+                customer_name=getattr(doc, "customer_name", None) or doc.customer,
+                items=items_list,
+                grand_total=float(doc.grand_total or 0.0),
+                bs_rate=bs_rate,
+                due_date=str(getattr(doc, "ve_ne_fecha_vencimiento", "") or extra.get("due_date") or ""),
+                seller_name=getattr(doc, "ve_vendedor_nombre", None) or getattr(doc, "owner", "") or "",
+                discount_total=float(getattr(doc, "discount_amount", 0.0) or 0.0),
+            )
+            frappe.sendmail(
+                recipients=[client_email],
+                subject=client_mail["subject"],
+                message=client_mail["html"],
+                now=True,
+            )
+            client_email_sent = True
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Client Email Error")
+
     whatsapp_sent = False
     if webhook_url:
         try:
@@ -224,6 +258,8 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
 
     return {
         "email_sent": email_sent,
+        "client_email_sent": client_email_sent,
+        "client_email": client_email,
         "email_recipients": payload["email_recipients"],
         "whatsapp_sent": whatsapp_sent,
         "whatsapp_number": payload["whatsapp_number"],
@@ -255,6 +291,27 @@ def _resolve_tax_account(company: str, keyword: str = "") -> str:
     return any_acc[0] if any_acc else ""
 
 
+def _resolve_customer_email(customer: str, override_email: str = "") -> str:
+    import frappe
+
+    candidate = (override_email or "").strip().lower()
+    if not candidate:
+        candidate = (frappe.db.get_value("Customer", customer, "email_id") or "").strip().lower()
+    if not candidate:
+        links = frappe.get_all(
+            "Dynamic Link",
+            filters={"link_doctype": "Customer", "link_name": customer, "parenttype": "Contact"},
+            pluck="parent",
+            limit=5,
+        )
+        for contact_name in links:
+            c_email = (frappe.db.get_value("Contact", contact_name, "email_id") or "").strip().lower()
+            if c_email:
+                candidate = c_email
+                break
+    return candidate
+
+
 @whitelist()
 def create_quick_delivery_note(
     customer: str,
@@ -268,6 +325,7 @@ def create_quick_delivery_note(
     manual_discount_percentage: float | str = 0.0,
     commission_option: str = "",
     fecha_vencimiento: str = "",
+    customer_email: str = "",
 ) -> dict:
     """Crea y confirma una Nota de Entrega (Delivery Note): descuenta inventario sin cobrar dinero aún."""
     import frappe
@@ -277,6 +335,18 @@ def create_quick_delivery_note(
         validated_due_date = validate_due_date(fecha_vencimiento)
     except ValueError as exc:
         frappe.throw(str(exc))
+
+    resolved_email = _resolve_customer_email(customer, customer_email)
+    if not resolved_email or "@" not in resolved_email or "." not in resolved_email.split("@")[-1]:
+        frappe.throw("El correo electrónico del cliente es obligatorio para emitir la Nota de Entrega.")
+
+    if customer_email:
+        existing_cust_email = (frappe.db.get_value("Customer", customer, "email_id") or "").strip()
+        if not existing_cust_email:
+            try:
+                frappe.db.set_value("Customer", customer, "email_id", resolved_email, update_modified=False)
+            except Exception:
+                pass
 
     parsed_items = json.loads(items) if isinstance(items, str) else items
     validated = validate_quick_invoice_input(customer, parsed_items)
@@ -319,6 +389,7 @@ def create_quick_delivery_note(
             "ve_vendedor_nombre": seller_name,
             "ve_ne_estado": "Pendiente",
             "ve_ne_fecha_vencimiento": validated_due_date,
+            "ve_ne_cliente_email": resolved_email,
             "remarks": (notes or f"Nota de Entrega ({seller_name}) — Pendiente por cobrar").strip(),
             "items": dn_items,
         }
@@ -725,9 +796,27 @@ def get_delivery_notes(
     elif status:
         summarized["notes"] = [n for n in summarized["notes"] if n["ve_ne_estado"] == status]
 
+    fx_snapshot = _get_exchange_rate_snapshot()
+    current_bs_rate = float(fx_snapshot.get("adjusted_rate") or fx_snapshot.get("bcv_rate") or 0.0)
+
     filtered_active = [n for n in summarized["notes"] if n.get("ve_ne_estado") != "Cancelada"]
+    for n in summarized["notes"]:
+        split = compute_note_commission_currency_split(n, fallback_bs_rate=current_bs_rate)
+        n["commission_usd"] = split["commission_usd"]
+        n["commission_bs_usd_equiv"] = split["commission_bs_usd_equiv"]
+        n["commission_bs"] = split["commission_bs"]
+
     summarized["summary"]["filtered_commission"] = round(
         sum(float(n.get("commission_amount") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_commission_usd"] = round(
+        sum(float(n.get("commission_usd") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_commission_bs_usd_equiv"] = round(
+        sum(float(n.get("commission_bs_usd_equiv") or 0.0) for n in filtered_active), 2
+    )
+    summarized["summary"]["filtered_commission_bs"] = round(
+        sum(float(n.get("commission_bs") or 0.0) for n in filtered_active), 2
     )
     summarized["summary"]["filtered_margin"] = round(
         sum(float(n.get("margin_amount") or 0.0) for n in filtered_active), 2
@@ -743,7 +832,8 @@ def get_delivery_notes(
         sum(float(n.get("commission_amount") or 0.0) for n in filtered_active if n.get("ve_ne_estado") != "Pagada"),
         2,
     )
-    summarized["commission_by_seller"] = summarize_seller_commissions(summarized["notes"])
+    summarized["commission_by_seller"] = summarize_seller_commissions(summarized["notes"], current_bs_rate=current_bs_rate)
+    summarized["clients"] = summarize_client_delivery_notes(summarized["notes"])
 
     iva_rate, igtf_rate = _get_tax_rates()
     modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name", order_by="name asc")
@@ -769,8 +859,9 @@ def get_delivery_notes(
         "iva_rate": iva_rate,
         "igtf_rate": igtf_rate,
         "payment_methods": payment_options,
+        "payment_method_currencies": {m: get_payment_method_currency(m) for m in payment_options},
         "sellers": seller_options,
-        "exchange_rate": _get_exchange_rate_snapshot(),
+        "exchange_rate": fx_snapshot,
         "commission_enabled": comm_enabled,
         "commission_rules": comm_rules,
     }
@@ -1184,46 +1275,162 @@ def mark_delivery_note_paid(
     paid_amount: float | str | None = None,
     screenshot_url: str = "",
 ) -> dict:
-    """Registra un abono o pago total de una Nota de Entrega: crea Sales Invoice (si no existe) y Payment Entry parcial/total."""
+    """Bloqueado: los pagos ahora se registran directamente por cliente (FIFO sobre las notas más antiguas)."""
     import frappe
-    from frappe.utils import now_datetime, today
-    from cima_ve.api.seller_pos import _apply_required_sales_metadata
+
+    frappe.throw(
+        "El pago individual por Nota de Entrega está deshabilitado. "
+        "Registra el pago directamente por cliente para aplicarlo a sus notas más antiguas."
+    )
+
+
+@whitelist()
+def register_client_payment(
+    customer: str,
+    payment_method: str,
+    paid_amount: float | str,
+    apply_iva: int | bool = 0,
+    apply_igtf: int | bool = 0,
+    reference: str = "",
+    screenshot_url: str = "",
+    seller: str = "",
+) -> dict:
+    """Registra un pago de cliente y lo distribuye FIFO en sus Notas de Entrega pendientes más antiguas."""
+    import frappe
 
     current_user = frappe.session.user
     if not current_user or current_user == "Guest":
         frappe.throw("Debes iniciar sesión para registrar pagos.", frappe.PermissionError)
 
-    dn = frappe.get_doc("Delivery Note", delivery_note)
-    if not _can_user_settle_delivery_note(dn, current_user):
-        frappe.throw("Solo puedes registrar pagos en tus propias Notas de Entrega.", frappe.PermissionError)
+    clean_customer = (customer or "").strip()
+    if not clean_customer:
+        frappe.throw("Debes seleccionar un cliente.")
 
-    if current_user == "Administrator" or "System Manager" in frappe.get_roles(current_user):
-        return _mark_delivery_note_paid_impl(
-            dn=dn,
-            resolved_by=current_user,
-            payment_method=payment_method,
-            apply_iva=apply_iva,
-            apply_igtf=apply_igtf,
-            reference=reference,
-            paid_amount=paid_amount,
-            screenshot_url=screenshot_url,
-        )
+    is_admin = current_user == "Administrator" or "System Manager" in frappe.get_roles(current_user)
+    notes_data = get_delivery_notes(
+        status="Pendiente",
+        seller=seller if is_admin else "",
+    )
+    client_notes = [
+        n for n in (notes_data.get("notes") or [])
+        if str(n.get("customer") or "").strip() == clean_customer
+    ]
 
-    frappe.set_user("Administrator")
     try:
-        dn_admin = frappe.get_doc("Delivery Note", delivery_note)
-        return _mark_delivery_note_paid_impl(
-            dn=dn_admin,
-            resolved_by=current_user,
-            payment_method=payment_method,
-            apply_iva=apply_iva,
-            apply_igtf=apply_igtf,
-            reference=reference,
-            paid_amount=paid_amount,
-            screenshot_url=screenshot_url,
-        )
+        req_amt = float(paid_amount)
+    except (TypeError, ValueError):
+        frappe.throw("El monto a pagar debe ser un número válido.")
+
+    try:
+        plan = allocate_client_payment_fifo(client_notes, req_amt)
+    except ValueError as exc:
+        frappe.throw(str(exc))
+
+    results: list[dict] = []
+    if not is_admin:
+        frappe.set_user("Administrator")
+    try:
+        for alloc in plan["allocations"]:
+            dn_doc = frappe.get_doc("Delivery Note", alloc["delivery_note"])
+            res = _mark_delivery_note_paid_impl(
+                dn=dn_doc,
+                resolved_by=current_user,
+                payment_method=payment_method,
+                apply_iva=apply_iva,
+                apply_igtf=apply_igtf,
+                reference=reference,
+                paid_amount=alloc["allocated_amount"],
+                screenshot_url=screenshot_url,
+            )
+            results.append(res)
     finally:
-        frappe.set_user(current_user)
+        if not is_admin:
+            frappe.set_user(current_user)
+
+    return {
+        "ok": True,
+        "customer": clean_customer,
+        "payment_amount": plan["payment_amount"],
+        "total_pending_before": plan["total_pending_before"],
+        "total_pending_after": plan["total_pending_after"],
+        "allocations": plan["allocations"],
+        "results": results,
+    }
+
+
+@whitelist()
+def get_delivery_note_document(
+    delivery_note: str = "",
+    customer: str = "",
+    status_filter: str = "active",
+) -> dict:
+    """Genera el documento HTML imprimible (tipo factura) para una Nota de Entrega o todas las de un cliente."""
+    import frappe
+    from frappe.utils import today
+
+    current_user = frappe.session.user
+    if not current_user or current_user == "Guest":
+        frappe.throw("Debes iniciar sesión para generar documentos.", frappe.PermissionError)
+
+    dn_name = (delivery_note or "").strip()
+    cust_name = (customer or "").strip()
+    if not dn_name and not cust_name:
+        frappe.throw("Debes indicar una Nota de Entrega o un Cliente.")
+
+    data = get_delivery_notes()
+    all_notes = data.get("notes") or []
+
+    if dn_name:
+        selected = [n for n in all_notes if n.get("name") == dn_name]
+        if not selected:
+            frappe.throw("No tienes acceso o no existe la Nota de Entrega solicitada.", frappe.PermissionError)
+        cust_name = str(selected[0].get("customer") or cust_name)
+    else:
+        selected = [n for n in all_notes if str(n.get("customer") or "").strip() == cust_name]
+        if status_filter == "pending":
+            selected = [n for n in selected if n.get("ve_ne_estado") in ("Pendiente", "Pago Parcial")]
+        elif status_filter == "active":
+            selected = [n for n in selected if n.get("ve_ne_estado") != "Cancelada"]
+        if not selected:
+            frappe.throw("No hay Notas de Entrega disponibles para este cliente.")
+
+    selected.sort(
+        key=lambda row: (
+            str(row.get("posting_date") or ""),
+            str(row.get("creation") or ""),
+            str(row.get("name") or ""),
+        )
+    )
+
+    cust_doc = frappe.db.get_value(
+        "Customer",
+        cust_name,
+        ["customer_name", "tax_id", "ve_rif_cedula", "email_id", "mobile_no", "primary_address"],
+        as_dict=True,
+    ) or {}
+
+    customer_info = {
+        "customer": cust_name,
+        "customer_name": cust_doc.get("customer_name") or selected[0].get("customer_name") or cust_name,
+        "rif_cedula": cust_doc.get("ve_rif_cedula") or cust_doc.get("tax_id") or "",
+        "email": cust_doc.get("email_id") or selected[0].get("ve_ne_cliente_email") or "",
+        "phone": cust_doc.get("mobile_no") or selected[0].get("ve_ne_cliente_telefono") or "",
+        "address": cust_doc.get("primary_address") or selected[0].get("ve_ne_envio_direccion") or "",
+    }
+    fx = (data.get("config") or {}).get("exchange_rate") or {}
+    bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+    doc_html = build_delivery_note_document_html(
+        customer_info=customer_info,
+        notes=selected,
+        bs_rate=bs_rate,
+        generated_at=str(today()),
+    )
+    return {
+        "ok": True,
+        "customer": cust_name,
+        "notes_count": len(selected),
+        "html": doc_html,
+    }
 
 
 def _mark_delivery_note_paid_impl(

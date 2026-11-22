@@ -180,6 +180,20 @@ def is_cash_payment_method(payment_method: str | None) -> bool:
     return bool(re.search(r"\bcash\b", clean))
 
 
+def get_payment_method_currency(payment_method: str | None) -> str:
+    """Identifica si el método de pago es en Bs ('Bs') o en Dólares ('USD')."""
+    clean = (payment_method or "").strip().lower()
+    if not clean:
+        return "USD"
+    # Explicit USD / FX indicators take priority if someone names e.g. "Transferencia USD"
+    if any(tok in clean for tok in ("usd", "dólar", "dolar", "$", "zelle", "binance", "cashea", "paypal", "divisa", "google pay")):
+        return "USD"
+    # Bolívares indicators
+    if any(tok in clean for tok in ("bs", "bolivar", "bolívar", "pago movil", "pago móvil", "punto de venta", "biopago", "transferencia", "ves")):
+        return "Bs"
+    return "USD"
+
+
 def compute_delivery_note_settlement_totals(
     net_total: float,
     apply_iva: bool = False,
@@ -398,8 +412,96 @@ def compute_margin_commission(
     }
 
 
-def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
-    """Agrupa las notas activas (no canceladas) por vendedor para calcular el pago de comisiones."""
+def compute_note_commission_currency_split(note: dict, fallback_bs_rate: float = 0.0) -> dict:
+    """Divide la comisión de una Nota de Entrega entre USD ($) y Bs según los métodos de pago usados."""
+    comm_total = round(float(note.get("commission_amount") or note.get("ve_ne_comision_monto") or 0.0), 2)
+    estado = (note.get("ve_ne_estado") or "").strip()
+    if comm_total <= 0 or estado == "Cancelada":
+        return {
+            "commission_usd": 0.0,
+            "commission_bs_usd_equiv": 0.0,
+            "commission_bs": 0.0,
+            "commission_pending_usd": 0.0,
+        }
+
+    total_to_pay = round(float(note.get("total_to_pay") or note.get("ve_ne_monto_total") or note.get("grand_total") or note.get("amount") or 0.0), 2)
+    history = parse_payment_history(note.get("payment_history") if note.get("payment_history") is not None else note.get("ve_ne_historial_pagos"))
+    default_rate = float(note.get("ve_ne_tasa_cambio") or fallback_bs_rate or 0.0)
+
+    if not history:
+        # Fallback when a note was marked paid without structured history
+        if estado == "Pagada":
+            method = note.get("ve_ne_metodo_pago") or ""
+            if get_payment_method_currency(method) == "Bs":
+                rate = default_rate
+                return {
+                    "commission_usd": 0.0,
+                    "commission_bs_usd_equiv": comm_total,
+                    "commission_bs": round(comm_total * rate, 2) if rate > 0 else 0.0,
+                    "commission_pending_usd": 0.0,
+                }
+            return {
+                "commission_usd": comm_total,
+                "commission_bs_usd_equiv": 0.0,
+                "commission_bs": 0.0,
+                "commission_pending_usd": 0.0,
+            }
+        return {
+            "commission_usd": 0.0,
+            "commission_bs_usd_equiv": 0.0,
+            "commission_bs": 0.0,
+            "commission_pending_usd": comm_total,
+        }
+
+    total_paid_hist = sum(max(float(h.get("amount") or 0.0), 0.0) for h in history)
+    denom = total_paid_hist if (estado == "Pagada" and total_paid_hist > 0) else (total_to_pay if total_to_pay > 0 else total_paid_hist)
+    if denom <= 0:
+        return {
+            "commission_usd": 0.0,
+            "commission_bs_usd_equiv": 0.0,
+            "commission_bs": 0.0,
+            "commission_pending_usd": comm_total,
+        }
+
+    comm_usd_part = 0.0
+    comm_bs_usd_equiv = 0.0
+    comm_bs_amount = 0.0
+
+    for h in history:
+        amt = max(float(h.get("amount") or 0.0), 0.0)
+        if amt <= 0:
+            continue
+        share = min(amt / denom, 1.0)
+        comm_piece = comm_total * share
+        method = h.get("method") or note.get("ve_ne_metodo_pago") or ""
+        if get_payment_method_currency(method) == "Bs":
+            rate = float(h.get("exchange_rate") or default_rate or 0.0)
+            comm_bs_usd_equiv += comm_piece
+            if rate > 0:
+                comm_bs_amount += comm_piece * rate
+        else:
+            comm_usd_part += comm_piece
+
+    if estado == "Pagada":
+        # Normalize rounding drift so paid USD + Bs equiv == comm_total
+        comm_bs_usd_equiv = round(min(comm_bs_usd_equiv, comm_total), 2)
+        comm_usd_part = round(max(comm_total - comm_bs_usd_equiv, 0.0), 2)
+        pending = 0.0
+    else:
+        comm_usd_part = round(comm_usd_part, 2)
+        comm_bs_usd_equiv = round(comm_bs_usd_equiv, 2)
+        pending = round(max(comm_total - comm_usd_part - comm_bs_usd_equiv, 0.0), 2)
+
+    return {
+        "commission_usd": comm_usd_part,
+        "commission_bs_usd_equiv": comm_bs_usd_equiv,
+        "commission_bs": round(comm_bs_amount, 2),
+        "commission_pending_usd": pending,
+    }
+
+
+def summarize_seller_commissions(notes: list[dict], current_bs_rate: float = 0.0) -> list[dict]:
+    """Agrupa las notas activas (no canceladas) por vendedor para calcular el pago de comisiones en $ y Bs."""
     buckets: dict[str, dict] = {}
     for n in notes or []:
         if (
@@ -429,20 +531,27 @@ def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
                 "commission_total": 0.0,
                 "paid_commission": 0.0,
                 "pending_commission": 0.0,
+                "commission_usd": 0.0,
+                "commission_bs_usd_equiv": 0.0,
+                "commission_bs": 0.0,
             },
         )
         comm = round(float(n.get("commission_amount") or 0.0), 2)
+        split = compute_note_commission_currency_split(n, fallback_bs_rate=current_bs_rate)
         b["notes_count"] += 1
         b["sales_total"] += float(n.get("net_total") or n.get("amount") or 0.0)
         b["cost_total"] += float(n.get("cost_total") or 0.0)
         b["margin_total"] += float(n.get("margin_amount") or 0.0)
         b["commission_total"] += comm
+        b["commission_usd"] += split["commission_usd"]
+        b["commission_bs_usd_equiv"] += split["commission_bs_usd_equiv"]
+        b["commission_bs"] += split["commission_bs"]
         if n.get("ve_ne_estado") == "Pagada":
             b["paid_notes_count"] += 1
             b["paid_commission"] += comm
         else:
             b["pending_notes_count"] += 1
-            b["pending_commission"] += comm
+            b["pending_commission"] += split["commission_pending_usd"] if split["commission_pending_usd"] > 0 else comm
 
     result: list[dict] = []
     for b in buckets.values():
@@ -452,6 +561,9 @@ def summarize_seller_commissions(notes: list[dict]) -> list[dict]:
         b["commission_total"] = round(b["commission_total"], 2)
         b["paid_commission"] = round(b["paid_commission"], 2)
         b["pending_commission"] = round(b["pending_commission"], 2)
+        b["commission_usd"] = round(b["commission_usd"], 2)
+        b["commission_bs_usd_equiv"] = round(b["commission_bs_usd_equiv"], 2)
+        b["commission_bs"] = round(b["commission_bs"], 2)
         result.append(b)
     result.sort(key=lambda r: (r["commission_total"], r["sales_total"]), reverse=True)
     return result
@@ -853,3 +965,381 @@ def build_delivery_note_notification_payload(
         "whatsapp_number": target_wa,
         "whatsapp_url": build_whatsapp_link(target_wa, text_msg),
     }
+
+
+def summarize_client_delivery_notes(notes: list[dict], reference_date: date | str | None = None) -> list[dict]:
+    """Agrupa Notas de Entrega por cliente, ordenando sus notas de más antigua a más nueva (FIFO)."""
+    ref_date = _parse_iso_date(reference_date) or date.today()
+    groups: dict[str, dict] = {}
+    for n in notes or []:
+        cust = str(n.get("customer") or "").strip() or "Sin Cliente"
+        cust_name = str(n.get("customer_name") or cust).strip()
+        g = groups.setdefault(
+            cust,
+            {
+                "customer": cust,
+                "customer_name": cust_name,
+                "customer_email": str(n.get("ve_ne_cliente_email") or "").strip(),
+                "customer_phone": str(n.get("ve_ne_cliente_telefono") or "").strip(),
+                "notes": [],
+                "total_notes_count": 0,
+                "pending_notes_count": 0,
+                "partial_notes_count": 0,
+                "paid_notes_count": 0,
+                "cancelled_notes_count": 0,
+                "overdue_count": 0,
+                "overdue_total": 0.0,
+                "total_amount": 0.0,
+                "paid_amount": 0.0,
+                "pending_amount": 0.0,
+                "oldest_due_date": "",
+                "sellers": [],
+            },
+        )
+        if not g["customer_email"] and n.get("ve_ne_cliente_email"):
+            g["customer_email"] = str(n.get("ve_ne_cliente_email") or "").strip()
+        if not g["customer_phone"] and n.get("ve_ne_cliente_telefono"):
+            g["customer_phone"] = str(n.get("ve_ne_cliente_telefono") or "").strip()
+
+        g["notes"].append(n)
+        g["total_notes_count"] += 1
+        estado = (n.get("ve_ne_estado") or "Pendiente").strip()
+        seller = str(n.get("seller_name") or n.get("seller_user") or "").strip()
+        if seller and seller not in g["sellers"]:
+            g["sellers"].append(seller)
+
+        if estado == "Cancelada":
+            g["cancelled_notes_count"] += 1
+            continue
+
+        g["total_amount"] += float(n.get("total_to_pay") or n.get("amount") or 0.0)
+        g["paid_amount"] += float(n.get("paid_amount") or 0.0)
+        rem = float(n.get("remaining_amount") or 0.0)
+        if estado in ("Pendiente", "Pago Parcial"):
+            g["pending_notes_count"] += 1
+            if estado == "Pago Parcial":
+                g["partial_notes_count"] += 1
+            g["pending_amount"] += rem
+            due = str(n.get("ve_ne_fecha_vencimiento") or "").strip()
+            if due and (not g["oldest_due_date"] or due < g["oldest_due_date"]):
+                g["oldest_due_date"] = due
+            due_obj = _parse_iso_date(due)
+            if n.get("is_overdue") or (due_obj is not None and due_obj < ref_date and rem > 0.01):
+                g["overdue_count"] += 1
+                g["overdue_total"] += rem
+        elif estado == "Pagada":
+            g["paid_notes_count"] += 1
+
+    result: list[dict] = []
+    for g in groups.values():
+        g["notes"].sort(
+            key=lambda row: (
+                str(row.get("posting_date") or ""),
+                str(row.get("creation") or ""),
+                str(row.get("name") or ""),
+            )
+        )
+        g["total_amount"] = round(g["total_amount"], 2)
+        g["paid_amount"] = round(g["paid_amount"], 2)
+        g["pending_amount"] = round(g["pending_amount"], 2)
+        g["overdue_total"] = round(g["overdue_total"], 2)
+        result.append(g)
+
+    result.sort(
+        key=lambda c: (
+            1 if c["overdue_count"] > 0 else 0,
+            c["pending_amount"],
+            c["total_amount"],
+        ),
+        reverse=True,
+    )
+    return result
+
+
+def allocate_client_payment_fifo(notes: list[dict], payment_amount: float) -> dict:
+    """Distribuye un pago de cliente entre sus Notas de Entrega pendientes más antiguas (FIFO)."""
+    amt = round(float(payment_amount or 0.0), 2)
+    if amt <= 0:
+        raise ValueError("El monto del pago debe ser mayor que 0.")
+
+    eligible = [
+        dict(n)
+        for n in (notes or [])
+        if int(n.get("docstatus") or 1) == 1
+        and (n.get("ve_ne_estado") or "Pendiente") in ("Pendiente", "Pago Parcial")
+        and round(float(n.get("remaining_amount") or 0.0), 2) > 0.01
+    ]
+    if not eligible:
+        raise ValueError("Este cliente no tiene Notas de Entrega pendientes por cobrar.")
+
+    eligible.sort(
+        key=lambda row: (
+            str(row.get("posting_date") or ""),
+            str(row.get("creation") or ""),
+            str(row.get("name") or ""),
+        )
+    )
+
+    total_pending = round(sum(float(n["remaining_amount"]) for n in eligible), 2)
+    if amt > total_pending + 0.01:
+        raise ValueError(
+            f"El monto del pago (${amt:.2f}) excede el saldo pendiente total del cliente (${total_pending:.2f})."
+        )
+    if amt > total_pending:
+        amt = total_pending
+
+    remaining_payment = amt
+    allocations: list[dict] = []
+    for n in eligible:
+        if remaining_payment <= 0.01:
+            break
+        note_rem = round(float(n["remaining_amount"]), 2)
+        alloc = round(min(remaining_payment, note_rem), 2)
+        if alloc <= 0:
+            continue
+        new_rem = round(max(note_rem - alloc, 0.0), 2)
+        will_complete = new_rem <= 0.01
+        if will_complete:
+            alloc = note_rem
+            new_rem = 0.0
+        allocations.append(
+            {
+                "delivery_note": n["name"],
+                "posting_date": str(n.get("posting_date") or ""),
+                "due_date": str(n.get("ve_ne_fecha_vencimiento") or ""),
+                "remaining_before": note_rem,
+                "allocated_amount": alloc,
+                "remaining_after": new_rem,
+                "new_estado": "Pagada" if will_complete else "Pago Parcial",
+            }
+        )
+        remaining_payment = round(max(remaining_payment - alloc, 0.0), 2)
+
+    return {
+        "payment_amount": amt,
+        "total_pending_before": total_pending,
+        "total_pending_after": round(max(total_pending - amt, 0.0), 2),
+        "allocations": allocations,
+    }
+
+
+def build_client_delivery_note_email_html(
+    *,
+    delivery_note: str,
+    customer_name: str,
+    items: list[dict] | None = None,
+    grand_total: float = 0.0,
+    bs_rate: float = 0.0,
+    due_date: str = "",
+    seller_name: str = "",
+    discount_total: float = 0.0,
+) -> dict:
+    """Construye el correo de confirmación enviado directamente al cliente al crear una Nota de Entrega."""
+    total_usd = round(float(grand_total or 0.0), 2)
+    total_bs = round(total_usd * float(bs_rate or 0.0), 2) if float(bs_rate or 0.0) > 0 else 0.0
+    rows_html = []
+    for row in items or []:
+        name = html.escape(str(row.get("item_name") or row.get("item_code") or "Producto"))
+        qty = float(row.get("qty") or 0)
+        rate = float(row.get("rate") or 0)
+        amt = round(float(row.get("amount") if row.get("amount") is not None else qty * rate), 2)
+        rows_html.append(
+            f"<tr>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;'>{name}</td>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;'>{qty:g}</td>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;'>${rate:.2f}</td>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;'><strong>${amt:.2f}</strong></td>"
+            f"</tr>"
+        )
+    bs_line = f" <span style='color:#475569;font-size:13px;'>(Bs. {total_bs:,.2f})</span>" if total_bs > 0 else ""
+    due_line = f"<p><strong>Fecha de vencimiento:</strong> {html.escape(str(due_date))}</p>" if due_date else ""
+    seller_line = f"<p><strong>Asesor / Vendedor:</strong> {html.escape(str(seller_name))}</p>" if seller_name else ""
+    disc_line = f"<p><strong>Descuento aplicado:</strong> -${float(discount_total):.2f}</p>" if float(discount_total or 0) > 0 else ""
+
+    subject = f"[CIMA Electronic VE] Nota de Entrega {delivery_note} — ${total_usd:.2f}"
+    body = f"""
+    <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#0f172a;">
+      <div style="background:#0f172a;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;font-size:18px;">CIMA ELECTRONIC VE</h2>
+        <p style="margin:4px 0 0;font-size:12px;color:#cbd5e1;">Comprobante de Nota de Entrega</p>
+      </div>
+      <div style="border:1px solid #cbd5e1;border-top:none;padding:16px 18px;border-radius:0 0 8px 8px;">
+        <p>Hola <strong>{html.escape(customer_name)}</strong>,</p>
+        <p>Se ha registrado su Nota de Entrega <strong>{html.escape(delivery_note)}</strong>.</p>
+        {due_line}
+        {seller_line}
+        {disc_line}
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:8px;text-align:left;border-bottom:1px solid #cbd5e1;">Producto</th>
+              <th style="padding:8px;text-align:right;border-bottom:1px solid #cbd5e1;">Cant.</th>
+              <th style="padding:8px;text-align:right;border-bottom:1px solid #cbd5e1;">Precio</th>
+              <th style="padding:8px;text-align:right;border-bottom:1px solid #cbd5e1;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>{''.join(rows_html)}</tbody>
+        </table>
+        <p style="font-size:16px;margin-top:12px;"><strong>Total: ${total_usd:.2f}</strong>{bs_line}</p>
+        <p style="font-size:12px;color:#64748b;margin-top:16px;">Gracias por su compra en CIMA Electronic VE.</p>
+      </div>
+    </div>
+    """
+    return {"subject": subject, "html": body}
+
+
+def build_delivery_note_document_html(
+    *,
+    customer_info: dict,
+    notes: list[dict],
+    bs_rate: float = 0.0,
+    company_name: str = "CIMA ELECTRONIC VE",
+    logo_url: str = "/assets/cima_ve/images/cima-logo-color.png",
+    generated_at: str = "",
+) -> str:
+    """Genera un documento imprimible tipo factura para una Nota de Entrega individual o consolidado de un cliente."""
+    cust_name = html.escape(str(customer_info.get("customer_name") or customer_info.get("customer") or "Cliente"))
+    cust_rif = html.escape(str(customer_info.get("rif_cedula") or "N/A"))
+    cust_email = html.escape(str(customer_info.get("email") or "N/A"))
+    cust_phone = html.escape(str(customer_info.get("phone") or "N/A"))
+    cust_addr = html.escape(str(customer_info.get("address") or ""))
+
+    is_single = len(notes) == 1
+    doc_title = f"NOTA DE ENTREGA {html.escape(str(notes[0].get('name') or ''))}" if is_single else f"ESTADO DE CUENTA / NOTAS DE ENTREGA ({len(notes)})"
+
+    total_amount = 0.0
+    total_paid = 0.0
+    total_pending = 0.0
+    total_discount = 0.0
+    item_rows: list[str] = []
+
+    for n in notes:
+        estado = str(n.get("ve_ne_estado") or "Pendiente")
+        if estado != "Cancelada":
+            total_amount += float(n.get("total_to_pay") or n.get("grand_total") or n.get("amount") or 0.0)
+            total_paid += float(n.get("paid_amount") or 0.0)
+            total_pending += float(n.get("remaining_amount") or 0.0)
+            total_discount += float(n.get("discount_amount") or 0.0)
+        note_name = html.escape(str(n.get("name") or ""))
+        note_date = html.escape(str(n.get("posting_date") or ""))
+        due_date = html.escape(str(n.get("ve_ne_fecha_vencimiento") or "-"))
+        for it in (n.get("items") or []):
+            qty = float(it.get("qty") or 0)
+            rate = float(it.get("rate") or 0)
+            amt = round(float(it.get("amount") if it.get("amount") is not None else qty * rate), 2)
+            item_rows.append(
+                f"<tr>"
+                f"<td>{note_name}<br><small style='color:#64748b;'>{note_date} · Vence: {due_date}</small></td>"
+                f"<td>{html.escape(str(it.get('item_code') or ''))}</td>"
+                f"<td>{html.escape(str(it.get('item_name') or it.get('item_code') or ''))}</td>"
+                f"<td style='text-align:right;'>{qty:g}</td>"
+                f"<td style='text-align:right;'>${rate:.2f}</td>"
+                f"<td style='text-align:right;'><strong>${amt:.2f}</strong></td>"
+                f"</tr>"
+            )
+
+    total_amount = round(total_amount, 2)
+    total_paid = round(total_paid, 2)
+    total_pending = round(total_pending, 2)
+    rate_val = float(bs_rate or 0.0)
+    pending_bs = round(total_pending * rate_val, 2) if rate_val > 0 else 0.0
+    total_bs = round(total_amount * rate_val, 2) if rate_val > 0 else 0.0
+
+    notes_summary_rows = "".join(
+        f"<tr>"
+        f"<td><strong>{html.escape(str(n.get('name') or ''))}</strong></td>"
+        f"<td>{html.escape(str(n.get('posting_date') or ''))}</td>"
+        f"<td>{html.escape(str(n.get('ve_ne_fecha_vencimiento') or '-'))}</td>"
+        f"<td>{html.escape(str(n.get('ve_ne_estado') or 'Pendiente'))}</td>"
+        f"<td style='text-align:right;'>${float(n.get('total_to_pay') or n.get('amount') or 0):.2f}</td>"
+        f"<td style='text-align:right;'>${float(n.get('paid_amount') or 0):.2f}</td>"
+        f"<td style='text-align:right;'><strong>${float(n.get('remaining_amount') or 0):.2f}</strong></td>"
+        f"</tr>"
+        for n in notes
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>{doc_title} - {cust_name}</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #f8fafc; }}
+  .doc-sheet {{ max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 28px; box-shadow: 0 4px 18px rgba(15,23,42,0.06); }}
+  .doc-header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 18px; }}
+  .doc-brand {{ display: flex; align-items: center; gap: 14px; }}
+  .doc-brand img {{ height: 54px; width: auto; }}
+  .doc-title-box {{ text-align: right; }}
+  .doc-title-box h1 {{ margin: 0; font-size: 18px; color: #0f172a; }}
+  .doc-title-box p {{ margin: 4px 0 0; font-size: 12px; color: #475569; }}
+  .doc-client {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; font-size: 13px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 12.5px; }}
+  th {{ background: #0f172a; color: #fff; padding: 8px; text-align: left; }}
+  td {{ padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }}
+  .doc-totals {{ margin-left: auto; width: 320px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; font-size: 13px; }}
+  .doc-total-row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+  .doc-total-grand {{ font-size: 15px; font-weight: 700; border-top: 1px solid #cbd5e1; padding-top: 6px; margin-top: 6px; }}
+  .no-print {{ margin-bottom: 16px; display: flex; justify-content: flex-end; gap: 8px; }}
+  .btn-print {{ background: #0f172a; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }}
+  @media print {{ body {{ background: #fff; padding: 0; }} .doc-sheet {{ border: none; box-shadow: none; padding: 0; }} .no-print {{ display: none; }} }}
+</style>
+</head>
+<body>
+  <div class="doc-sheet">
+    <div class="no-print">
+      <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
+    </div>
+    <div class="doc-header">
+      <div class="doc-brand">
+        <img src="{html.escape(logo_url)}" alt="CIMA" onerror="this.style.display='none'" />
+        <div>
+          <strong style="font-size:17px;">{html.escape(company_name)}</strong><br>
+          <span style="font-size:12px;color:#475569;">Documento Administrativo de Entrega</span>
+        </div>
+      </div>
+      <div class="doc-title-box">
+        <h1>{doc_title}</h1>
+        <p>Emitido: {html.escape(generated_at or date.today().isoformat())}</p>
+        {f'<p>Tasa ref.: Bs. {rate_val:,.2f} / USD</p>' if rate_val > 0 else ''}
+      </div>
+    </div>
+
+    <div class="doc-client">
+      <div><strong>Cliente:</strong> {cust_name}</div>
+      <div><strong>Cédula / RIF:</strong> {cust_rif}</div>
+      <div><strong>Correo:</strong> {cust_email}</div>
+      <div><strong>Teléfono:</strong> {cust_phone}</div>
+      {f'<div style="grid-column:1 / -1;"><strong>Dirección:</strong> {cust_addr}</div>' if cust_addr else ''}
+    </div>
+
+    <h3 style="font-size:14px;margin:0 0 8px;">Resumen de Notas de Entrega</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Nota</th><th>Fecha</th><th>Vencimiento</th><th>Estado</th>
+          <th style="text-align:right;">Total ($)</th><th style="text-align:right;">Pagado ($)</th><th style="text-align:right;">Pendiente ($)</th>
+        </tr>
+      </thead>
+      <tbody>{notes_summary_rows}</tbody>
+    </table>
+
+    <h3 style="font-size:14px;margin:0 0 8px;">Detalle de Productos</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Nota / Fecha</th><th>Código</th><th>Producto</th>
+          <th style="text-align:right;">Cant.</th><th style="text-align:right;">Precio Unit.</th><th style="text-align:right;">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>{''.join(item_rows) or '<tr><td colspan="6" style="text-align:center;">Sin ítems detallados</td></tr>'}</tbody>
+    </table>
+
+    <div class="doc-totals">
+      <div class="doc-total-row"><span>Total Notas:</span><strong>${total_amount:,.2f}{f' (Bs. {total_bs:,.2f})' if total_bs > 0 else ''}</strong></div>
+      {f'<div class="doc-total-row"><span>Descuentos:</span><span>-${total_discount:,.2f}</span></div>' if total_discount > 0 else ''}
+      <div class="doc-total-row"><span>Total Pagado:</span><span>${total_paid:,.2f}</span></div>
+      <div class="doc-total-row doc-total-grand"><span>Saldo Pendiente:</span><span>${total_pending:,.2f}{f' (Bs. {pending_bs:,.2f})' if pending_bs > 0 else ''}</span></div>
+    </div>
+  </div>
+</body>
+</html>"""

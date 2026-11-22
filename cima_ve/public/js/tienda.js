@@ -10,7 +10,7 @@
   const state = {
     bootstrap: null,
     catalog: { items: [], total: 0, page: 1, page_size: 24 },
-    filters: { query: "", item_group: "", only_in_stock: true, sort: "stock_desc", page: 1 },
+    filters: { query: "", item_group: "", only_in_stock: true, sort: "stock_desc", page: 1, price_mode: "detal" },
     cart: loadCart(),
     cartPreview: null,
     selectedPayment: "cashea",
@@ -111,14 +111,14 @@
   function renderBootstrap() {
     const b = state.bootstrap;
     if (!b) return;
-    document.getElementById("nav-warehouse").textContent = b.settings.warehouse || "Venezuela";
 
     const user = b.user || {};
     if (user.is_guest) {
       document.getElementById("nav-user-greeting").textContent = "Hola, Identifícate";
       document.getElementById("nav-user-label").textContent = "Google / Cuenta";
     } else {
-      document.getElementById("nav-user-greeting").textContent = `Hola, ${user.full_name.split(" ")[0]}`;
+      const tierTag = user.is_mayorista ? "Mayorista" : "Detal";
+      document.getElementById("nav-user-greeting").textContent = `Hola, ${user.full_name.split(" ")[0]} (${tierTag})`;
       document.getElementById("nav-user-label").textContent = user.ve_rif_cedula ? `RIF: ${user.ve_rif_cedula}` : "Mi Cuenta y RIF";
     }
 
@@ -152,6 +152,7 @@
       sort: state.filters.sort,
       page: state.filters.page,
       page_size: 24,
+      price_mode: state.filters.price_mode,
     });
     state.catalog = res;
     renderCatalog();
@@ -262,6 +263,7 @@
     const preview = await apiCall("cima_ve.api.storefront.preview_storefront_cart", {
       items: state.cart,
       payment_method: state.selectedPayment,
+      price_mode: state.filters.price_mode,
     });
     state.cartPreview = preview;
 
@@ -510,13 +512,46 @@
     };
   }
 
+  function openContactModal(mayoristaNotice = false) {
+    const contact = state.bootstrap?.contact || {};
+    const email = contact.email || "cimaelectronic@gmail.com";
+    const wa = contact.whatsapp || "+584243472198";
+    const waUrl = contact.whatsapp_url || `https://wa.me/${wa.replace(/\D/g, "")}`;
+    const banner = mayoristaNotice
+      ? `<div style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:8px;padding:12px;margin-bottom:14px;">
+           <strong>Precios Mayorista:</strong> Estás viendo nuestra lista de precios al mayor. Si aún no estás registrado como cliente <strong>Mayorista</strong>, debes contactarnos para solicitar tu activación y poder realizar pedidos mayoristas.
+         </div>`
+      : "";
+    document.getElementById("contact-modal-body").innerHTML = `
+      <h2 style="margin-top:0;">Contáctanos — CIMA Electronic VE</h2>
+      ${banner}
+      <p style="color:#475569;font-size:14px;">¿Tienes dudas sobre productos, envíos o quieres registrarte como cliente Mayorista? Escríbenos:</p>
+      <div style="display:grid;gap:10px;margin-top:12px;">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#64748b;">Correo Electrónico</div>
+          <a href="mailto:${escapeHtml(email)}" style="font-weight:700;font-size:15px;color:#0f172a;">${escapeHtml(email)}</a>
+        </div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#15803d;">WhatsApp</div>
+          <div style="font-weight:700;font-size:15px;color:#14532d;margin-bottom:6px;">${escapeHtml(wa)}</div>
+          <a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener" class="cima-btn-primary" style="display:inline-block;text-decoration:none;">Escribir por WhatsApp</a>
+        </div>
+      </div>
+    `;
+    document.getElementById("contact-modal").classList.remove("hidden");
+  }
+
   async function openCheckoutModal() {
+    const user = state.bootstrap?.user || { is_guest: true };
+    if (state.filters.price_mode === "mayorista" && !user.is_mayorista) {
+      showToast("Solo clientes Mayoristas pueden ordenar con precios de mayorista. Contáctanos.");
+      openContactModal(true);
+      return;
+    }
     closeCart();
     const modal = document.getElementById("checkout-modal");
     const body = document.getElementById("checkout-modal-body");
     modal.classList.remove("hidden");
-
-    const user = state.bootstrap?.user || { is_guest: true };
     const methods = state.bootstrap?.payment_methods || [];
     const providers = state.bootstrap?.delivery_providers || [];
     if (providers.length && !providers.some((p) => p.id === state.selectedDelivery)) {
@@ -527,6 +562,7 @@
       items: state.cart,
       payment_method: state.selectedPayment,
       delivery_provider: state.selectedDelivery,
+      price_mode: state.filters.price_mode,
     });
 
     body.innerHTML = `
@@ -731,6 +767,7 @@
         items: state.cart,
         payment_method: state.selectedPayment,
         delivery_provider: state.selectedDelivery,
+        price_mode: state.filters.price_mode,
         payment_details: paymentDetails,
         customer_info: {
           full_name: document.getElementById("chk-name").value,
@@ -787,6 +824,16 @@
       document.getElementById("nav-category-select").value = btn.dataset.cat;
       document.querySelectorAll(".cima-cat-pill").forEach((p) => p.classList.toggle("active", p === btn));
       loadCatalog();
+    };
+
+    document.getElementById("filter-mayorista").onchange = (e) => {
+      const enabled = e.target.checked;
+      state.filters.price_mode = enabled ? "mayorista" : "detal";
+      state.filters.page = 1;
+      loadCatalog();
+      if (enabled && !state.bootstrap?.user?.is_mayorista) {
+        openContactModal(true);
+      }
     };
 
     document.getElementById("filter-in-stock").onchange = (e) => {
@@ -847,6 +894,7 @@
     };
 
     document.getElementById("btn-account").onclick = () => openAccountModal("login");
+    document.getElementById("btn-contact").onclick = () => openContactModal(false);
     document.getElementById("hero-account-btn").onclick = () => openAccountModal("login");
     document.getElementById("btn-orders").onclick = () => openAccountModal("orders");
     document.getElementById("hero-in-stock-btn").onclick = () => {

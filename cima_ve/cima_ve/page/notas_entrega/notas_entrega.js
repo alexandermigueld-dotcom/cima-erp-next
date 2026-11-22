@@ -78,28 +78,8 @@ class CimaNotasEntrega {
 
 				<div class="cima-ne-kpis" id="ne-kpis"></div>
 
-				<div class="cima-ne-card">
-					<div class="table-responsive">
-						<table class="table table-bordered table-hover table-sm">
-							<thead>
-								<tr>
-									<th>Nota de Entrega</th>
-									<th>Fecha</th>
-									<th>Cliente</th>
-									<th>Vendedor</th>
-									<th>Productos</th>
-									<th class="text-right">Monto Base</th>
-									<th>Comisión Vendedor</th>
-									<th>Estado</th>
-									<th>Registro Pago / Reversión</th>
-									<th>Acciones</th>
-								</tr>
-							</thead>
-							<tbody id="ne-table-body">
-								<tr><td colspan="10" class="text-center text-muted p-4">Cargando notas de entrega...</td></tr>
-							</tbody>
-						</table>
-					</div>
+				<div id="ne-clients-container">
+					<div class="cima-ne-card text-center text-muted p-4">Cargando notas de entrega...</div>
 				</div>
 			</div>
 		`;
@@ -131,10 +111,20 @@ class CimaNotasEntrega {
 			}, 300);
 		});
 
-		root.on("click", "[data-pay-dn]", (e) => {
-			const dnName = $(e.currentTarget).attr("data-pay-dn");
-			const note = (this.data?.notes || []).find((n) => n.name === dnName);
-			if (note) this.openPaidDialog(note);
+		root.on("click", "[data-pay-client]", (e) => {
+			const cust = $(e.currentTarget).attr("data-pay-client");
+			const clientGroup = (this.data?.clients || []).find((c) => c.customer === cust);
+			if (clientGroup) this.openClientPaymentDialog(clientGroup);
+		});
+
+		root.on("click", "[data-doc-client]", (e) => {
+			const cust = $(e.currentTarget).attr("data-doc-client");
+			if (cust) this.openDocumentPreview({ customer: cust });
+		});
+
+		root.on("click", "[data-doc-dn]", (e) => {
+			const dnName = $(e.currentTarget).attr("data-doc-dn");
+			if (dnName) this.openDocumentPreview({ delivery_note: dnName });
 		});
 
 		root.on("click", "[data-proof-dn]", (e) => {
@@ -156,8 +146,8 @@ class CimaNotasEntrega {
 			args: this.filters,
 			callback: (r) => {
 				if (!r.message) {
-					this.wrapper.find("#ne-table-body").html(
-						`<tr><td colspan="10" class="text-center text-danger p-4">No se pudieron cargar las Notas de Entrega.</td></tr>`
+					this.wrapper.find("#ne-clients-container").html(
+						`<div class="cima-ne-card text-center text-danger p-4">No se pudieron cargar las Notas de Entrega.</div>`
 					);
 					return;
 				}
@@ -168,8 +158,8 @@ class CimaNotasEntrega {
 				this.renderTable();
 			},
 			error: () => {
-				this.wrapper.find("#ne-table-body").html(
-					`<tr><td colspan="10" class="text-center text-danger p-4">Error al consultar Notas de Entrega. Verifica tu sesión o permisos.</td></tr>`
+				this.wrapper.find("#ne-clients-container").html(
+					`<div class="cima-ne-card text-center text-danger p-4">Error al consultar Notas de Entrega. Verifica tu sesión o permisos.</div>`
 				);
 			},
 		});
@@ -234,7 +224,7 @@ class CimaNotasEntrega {
 			<div class="cima-ne-kpi" style="border-left:3px solid #7c3aed;">
 				<div class="cima-ne-kpi-label">Comisión Vendedor (Filtro)</div>
 				<div class="cima-ne-kpi-val" style="color:#6d28d9;">$${Number(s.filtered_commission || 0).toFixed(2)}</div>
-				<div class="cima-ne-kpi-sub">Pagadas: $${Number(s.filtered_paid_commission || 0).toFixed(2)} · Pend.: $${Number(s.filtered_pending_commission || 0).toFixed(2)}</div>
+				<div class="cima-ne-kpi-sub">En $: $${Number(s.filtered_commission_usd || 0).toFixed(2)} · En Bs: ${this.formatBs(s.filtered_commission_bs || 0)}</div>
 			</div>
 			<div class="cima-ne-kpi">
 				<div class="cima-ne-kpi-label">Total Notas</div>
@@ -247,227 +237,191 @@ class CimaNotasEntrega {
 
 	renderTable() {
 		const isAdmin = Boolean(this.data?.config?.is_admin);
-		const notes = this.data?.notes || [];
-		const tbody = this.wrapper.find("#ne-table-body");
-		if (!notes.length) {
-			tbody.html(`<tr><td colspan="10" class="text-center text-muted p-4">No hay Notas de Entrega para los filtros seleccionados.</td></tr>`);
+		const clients = this.data?.clients || [];
+		const container = this.wrapper.find("#ne-clients-container");
+		if (!clients.length) {
+			container.html(`<div class="cima-ne-card text-center text-muted p-4">No hay Notas de Entrega para los filtros seleccionados.</div>`);
 			return;
 		}
 
-		tbody.html(
-			notes
-				.map((n) => {
-					const itemsText = (n.items || [])
-						.slice(0, 4)
-						.map((it) => {
-							const orig = Number(it.price_list_rate || 0);
-							const rate = Number(it.rate || 0);
-							const hasDisc = Boolean(it.has_discount || Number(it.discount_percentage || 0) > 0 || (orig > 0 && rate < orig - 0.0001));
-							const discHtml = hasDisc
-								? ` <del class="text-muted">$${orig.toFixed(2)}</del> <strong>$${rate.toFixed(2)}</strong> <span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Descuento</span>`
-								: ` <span class="text-muted">($${rate.toFixed(2)})</span>`;
-							return `${Number(it.qty)}x ${frappe.utils.escape_html(it.item_name || it.item_code)}${discHtml}`;
-						})
-						.join("<br>");
-					const moreItems = (n.items || []).length > 4 ? `<div class="text-muted small">+${n.items.length - 4} más</div>` : "";
-					const globalDiscTags = [];
-					if (Number(n.auto_discount_pct || 0) > 0 || Number(n.auto_discount_amount || 0) > 0) {
-						globalDiscTags.push(
-							`Auto -${Number(n.auto_discount_pct || 0).toFixed(2)}% (-$${Number(n.auto_discount_amount || 0).toFixed(2)})`
-						);
-					}
-					if (Number(n.manual_discount_pct || 0) > 0 || Number(n.manual_discount_amount || 0) > 0) {
-						globalDiscTags.push(
-							`Manual -${Number(n.manual_discount_pct || 0).toFixed(2)}% (-$${Number(n.manual_discount_amount || 0).toFixed(2)})`
-						);
-					}
-					const globalDiscBadge = globalDiscTags.length
-						? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;font-size:10px;display:inline-block;white-space:normal;">Descuento: ${frappe.utils.escape_html(globalDiscTags.join(" + "))}</span></div>`
-						: "";
-					const noteDiscountBadge =
-						!globalDiscTags.length && n.has_discount
-							? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Con descuento (${Number(n.discounted_items_count || 1)})</span></div>`
-							: "";
-					const badgeClass =
-						n.ve_ne_estado === "Pagada"
-							? "cima-ne-badge-pagada"
-							: n.ve_ne_estado === "Pago Parcial"
-							? "cima-ne-badge-parcial"
-							: n.ve_ne_estado === "Cancelada"
-							? "cima-ne-badge-cancelada"
-							: "cima-ne-badge-pendiente";
+		const fx = this.data?.config?.exchange_rate || {};
+		const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
 
-					const history = Array.isArray(n.payment_history) ? n.payment_history : [];
-					const historicalPaymentsTotal = history.reduce((total, payment) => total + Number(payment.amount || 0), 0);
-					const historyHtml = history.length
-						? `<div class="mt-1 pt-1" style="border-top:1px dashed #cbd5e1;">` +
-						  history
-								.map(
-									(h, idx) => {
+		const cardsHtml = clients
+			.map((client) => {
+				const notes = client.notes || [];
+				const pendingUsd = Number(client.pending_amount || 0);
+				const pendingBsHtml = fxRate > 0 && pendingUsd > 0.01 ? ` <span class="text-muted small">(${this.formatBs(pendingUsd * fxRate)})</span>` : "";
+				const overdueBadge =
+					Number(client.overdue_count || 0) > 0
+						? `<span class="label" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-size:11px;font-weight:700;">${client.overdue_count} VENCIDA(S) · $${Number(client.overdue_total || 0).toFixed(2)}</span>`
+						: "";
+				const canPayClient = pendingUsd > 0.01;
+
+				const rowsHtml = notes
+					.map((n) => {
+						const itemsText = (n.items || [])
+							.slice(0, 4)
+							.map((it) => {
+								const orig = Number(it.price_list_rate || 0);
+								const rate = Number(it.rate || 0);
+								const hasDisc = Boolean(it.has_discount || Number(it.discount_percentage || 0) > 0 || (orig > 0 && rate < orig - 0.0001));
+								const discHtml = hasDisc
+									? ` <del class="text-muted">$${orig.toFixed(2)}</del> <strong>$${rate.toFixed(2)}</strong> <span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Descuento</span>`
+									: ` <span class="text-muted">($${rate.toFixed(2)})</span>`;
+								return `${Number(it.qty)}x ${frappe.utils.escape_html(it.item_name || it.item_code)}${discHtml}`;
+							})
+							.join("<br>");
+						const moreItems = (n.items || []).length > 4 ? `<div class="text-muted small">+${n.items.length - 4} más</div>` : "";
+						const badgeClass =
+							n.ve_ne_estado === "Pagada"
+								? "cima-ne-badge-pagada"
+								: n.ve_ne_estado === "Pago Parcial"
+								? "cima-ne-badge-parcial"
+								: n.ve_ne_estado === "Cancelada"
+								? "cima-ne-badge-cancelada"
+								: "cima-ne-badge-pendiente";
+
+						const history = Array.isArray(n.payment_history) ? n.payment_history : [];
+						const historyHtml = history.length
+							? `<div class="mt-1 pt-1" style="border-top:1px dashed #cbd5e1;">` +
+							  history
+									.map((h, idx) => {
 										const proofLink = h.screenshot_url
 											? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
 											: "";
-										const hBs = Number(h.amount_bs || 0) > 0
-											? ` (${this.formatBs(h.amount_bs)})`
-											: "";
-										return `<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}${hBs}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (Ref: ${frappe.utils.escape_html(h.reference)})` : ""}${proofLink} · ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
-									}
-								)
-								.join("") +
-						  `</div>`
-						: "";
+										const hBs = Number(h.amount_bs || 0) > 0 ? ` (${this.formatBs(h.amount_bs)})` : "";
+										return `<div class="text-muted" style="font-size:11px;">#${idx + 1}: <strong>$${Number(h.amount || 0).toFixed(2)}${hBs}</strong> · ${frappe.utils.escape_html(h.method || "")}${h.reference ? ` (Ref: ${frappe.utils.escape_html(h.reference)})` : ""}${proofLink}</div>`;
+									})
+									.join("") +
+							  `</div>`
+							: "";
 
-					const reportedProofHtml = (n.ve_ne_metodo_pago || n.ve_ne_referencia_pago || n.ve_ne_comprobante_url)
-						? `<div class="mt-1 p-1 small" style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:4px;">
-							${n.ve_ne_metodo_pago ? `<div><strong>Reportado:</strong> ${frappe.utils.escape_html(n.ve_ne_metodo_pago)}</div>` : ""}
-							${n.ve_ne_referencia_pago ? `<div><strong>Ref:</strong> ${frappe.utils.escape_html(n.ve_ne_referencia_pago)}${n.ve_ne_banco_pago ? ` (${frappe.utils.escape_html(n.ve_ne_banco_pago)})` : ""}</div>` : ""}
-							${n.ve_ne_comprobante_url ? `<div><a href="${encodeURI(n.ve_ne_comprobante_url)}" target="_blank" rel="noopener">📎 Ver captura reportada</a></div>` : ""}
-						</div>`
-						: "";
+						let resolutionHtml = `<span class="text-muted small">Sin procesar</span>`;
+						if (n.ve_ne_estado === "Pagada" || n.ve_ne_estado === "Pago Parcial") {
+							const paidBsText = Number(n.paid_bs || 0) > 0 ? ` (${this.formatBs(n.paid_bs)})` : "";
+							resolutionHtml = `
+								<div class="small">
+									<div>Pagado: <strong>$${Number(n.paid_amount || 0).toFixed(2)}${paidBsText}</strong> · Resta: <strong>$${Number(n.remaining_amount || 0).toFixed(2)}</strong></div>
+									<strong>${frappe.utils.escape_html(n.ve_ne_metodo_pago || "-")}</strong>
+									${n.ve_ne_factura && isAdmin ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
+									${historyHtml}
+								</div>
+							`;
+						} else if (n.ve_ne_estado === "Cancelada") {
+							resolutionHtml = `<div class="small text-danger"><strong>Cancelada</strong>${n.ve_ne_motivo_cancelacion ? `<br>${frappe.utils.escape_html(n.ve_ne_motivo_cancelacion)}` : ""}</div>`;
+						}
 
-					let resolutionHtml = `<span class="text-muted small">Sin procesar</span>${reportedProofHtml}`;
-					if (n.ve_ne_estado === "Pagada" || n.ve_ne_estado === "Pago Parcial") {
-						const taxTags = [
-							n.ve_ne_aplica_iva ? "IVA" : "Sin IVA",
-							n.ve_ne_aplica_igtf ? "IGTF" : "",
-						]
-							.filter(Boolean)
-							.join(" + ");
-						const paidBsText = Number(n.paid_bs || 0) > 0 ? ` (${this.formatBs(n.paid_bs)})` : "";
-						const totalBsText = Number(n.total_bs || 0) > 0 ? ` (${this.formatBs(n.total_bs)})` : paidBsText;
-						const balanceLine =
-							n.ve_ne_estado === "Pago Parcial"
-								? `<div style="color:#1e40af;font-weight:700;">Pagado: $${Number(n.paid_amount || 0).toFixed(2)}${paidBsText} · Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div>`
-								: `<div>Total pagado: <strong>$${Number(n.paid_amount || n.total_to_pay || n.amount || 0).toFixed(2)}${totalBsText}</strong></div>`;
-						resolutionHtml = `
-							<div class="small">
-								${balanceLine}
-								<strong>${frappe.utils.escape_html(n.ve_ne_metodo_pago || "-")}</strong> (${frappe.utils.escape_html(taxTags)})<br>
-								<span class="text-muted">${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")}</span><br>
-								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
-								${n.ve_ne_factura && isAdmin ? `<br><a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
-								${n.ve_ne_comprobante_url && !history.length ? `<br><a href="${encodeURI(n.ve_ne_comprobante_url)}" target="_blank" rel="noopener">📎 Ver captura</a>` : ""}
-								${historyHtml}
-							</div>
-						`;
-					} else if (n.ve_ne_estado === "Cancelada") {
-						resolutionHtml = `
-							<div class="small text-danger">
-								<strong>Cancelada</strong> (${frappe.utils.escape_html(n.ve_ne_fecha_resolucion || "")})<br>
-								<span class="text-muted">Por: ${frappe.utils.escape_html(n.ve_ne_usuario_resolucion || "")}</span>
-								${n.ve_ne_motivo_cancelacion ? `<br><span class="text-muted">${frappe.utils.escape_html(n.ve_ne_motivo_cancelacion)}</span>` : ""}
-								${n.ve_ne_factura && isAdmin ? `<br>Factura revertida: <a href="/app/sales-invoice/${encodeURIComponent(n.ve_ne_factura)}">${frappe.utils.escape_html(n.ve_ne_factura)}</a>` : ""}
-								${historicalPaymentsTotal > 0 ? `<br>Pagos revertidos: <strong>$${historicalPaymentsTotal.toFixed(2)}</strong>` : ""}
-								${reportedProofHtml}
-								${historyHtml}
-							</div>
-						`;
-					}
-
-					const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
-					const canRevert = isAdmin && n.ve_ne_estado !== "Cancelada";
-					const actionsHtml =
-						isPayable || canRevert
-							? `<div class="cima-ne-actions">
-								${isPayable ? `<button type="button" class="btn btn-xs btn-success" data-pay-dn="${frappe.utils.escape_html(n.name)}">${n.ve_ne_estado === "Pago Parcial" ? "Abonar / Pagar" : "Pagar"}</button>` : ""}
+						const canRevert = isAdmin && n.ve_ne_estado !== "Cancelada";
+						const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
+						const actionsHtml = `
+							<div class="cima-ne-actions">
+								<button type="button" class="btn btn-xs btn-default" data-doc-dn="${frappe.utils.escape_html(n.name)}" title="Generar documento imprimible">📄 Documento</button>
 								${isPayable ? `<button type="button" class="btn btn-xs btn-default" data-proof-dn="${frappe.utils.escape_html(n.name)}">📎 Captura</button>` : ""}
 								${canRevert ? `<button type="button" class="btn btn-xs btn-danger" data-revert-dn="${frappe.utils.escape_html(n.name)}">Revertir</button>` : ""}
-								${!isPayable && isAdmin ? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>` : ""}
-							</div>`
-							: isAdmin
-							? `<a class="btn btn-xs btn-default" href="/app/delivery-note/${encodeURIComponent(n.name)}">Ver</a>`
-							: `<span class="text-muted small">${n.ve_ne_estado === "Cancelada" ? "Cancelada" : "Completada"}</span>`;
-
-					const fx = this.data?.config?.exchange_rate || {};
-					const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
-					const totalUsd = Number(n.total_to_pay || n.amount || 0);
-					let bsLine = "";
-					if (n.ve_ne_estado === "Pagada") {
-						const frozenBs = Number(n.total_bs || n.paid_bs || 0);
-						if (frozenBs > 0) {
-							const frozenRate = Number(n.exchange_rate_used || 0);
-							const rateTip = frozenRate > 0 ? ` title="Referencia histórica congelada @ Bs. ${frozenRate.toFixed(2)}/USD"` : "";
-							bsLine = `<div class="small text-muted"${rateTip}>${this.formatBs(frozenBs)} <span style="font-size:10px;">(hist.)</span></div>`;
-						}
-					} else if (n.ve_ne_estado === "Pago Parcial") {
-						const paidBs = Number(n.paid_bs || 0);
-						const remBs = fxRate > 0 ? Number(n.remaining_amount || 0) * fxRate : 0;
-						const paidBsHtml = paidBs > 0 ? `<div class="small text-muted">Pagado: ${this.formatBs(paidBs)}</div>` : "";
-						const remBsHtml = remBs > 0 ? ` (${this.formatBs(remBs)})` : "";
-						bsLine = paidBsHtml;
-						n._remBsHtml = remBsHtml;
-					} else if (n.ve_ne_estado !== "Cancelada" && fxRate > 0) {
-						const liveBs = totalUsd * fxRate;
-						if (liveBs > 0) {
-							bsLine = `<div class="small text-muted">${this.formatBs(liveBs)}</div>`;
-						}
-					}
-
-					const origSub = Number(n.subtotal_before_discount || 0);
-					const baseDiscPrefix =
-						n.has_global_discount && origSub > Number(n.amount || 0) + 0.01
-							? `<div class="small text-muted"><del>$${origSub.toFixed(2)}</del></div>`
-							: "";
-					const amountCellHtml =
-						n.ve_ne_estado === "Pago Parcial"
-							? `${baseDiscPrefix}<div>$${totalUsd.toFixed(2)}</div>${bsLine}<div class="small text-primary">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}${n._remBsHtml || ""}</div>`
-							: `${baseDiscPrefix}$${totalUsd.toFixed(2)}${bsLine}`;
-
-					const originBadge =
-						n.ve_ne_origen === "Tienda Web"
-							? `<div><span class="label" style="background:#dbeafe;color:#1e40af;font-size:10px;">Tienda Web</span></div>`
-							: n.ve_ne_origen === "MercadoLibre" || String(n.canal_venta || "").toLowerCase().includes("mercado")
-								? `<div><span class="label" style="background:#fef9c3;color:#854d0e;font-size:10px;">MercadoLibre</span></div>`
-								: "";
-					const shipInfo = n.ve_ne_envio_proveedor
-						? `<div class="small text-muted">Envío: ${frappe.utils.escape_html(n.ve_ne_envio_proveedor)}${Number(n.ve_ne_envio_costo || 0) > 0 ? ` ($${Number(n.ve_ne_envio_costo).toFixed(2)})` : ""}</div>`
-						: "";
-
-					let commissionCellHtml = `<span class="text-muted small">Sin comisión</span>`;
-					if (n.ve_ne_estado === "Cancelada") {
-						commissionCellHtml = `<span class="text-muted small">Anulada ($0.00)</span>`;
-					} else if (n.commission_excluded) {
-						const exclLabel = n.ve_ne_origen || n.canal_venta || "Canal empresa";
-						commissionCellHtml = `<span class="text-muted small">Sin comisión (${frappe.utils.escape_html(exclLabel)})</span>`;
-					} else if (n.commission_option || Number(n.commission_pct || 0) > 0) {
-						const optLabel = n.commission_option || `${Number(n.commission_pct || 0).toFixed(0)}%`;
-						const marginLine = isAdmin
-							? `<div class="text-muted" style="font-size:11px;">Margen: $${Number(n.margin_amount || 0).toFixed(2)} (Costo: $${Number(n.cost_total || 0).toFixed(2)})</div>`
-							: "";
-						commissionCellHtml = `
-							<div class="small">
-								<span class="label" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:10px;">${frappe.utils.escape_html(optLabel)}</span>
-								<div style="color:#5b21b6;font-weight:700;margin-top:2px;">$${Number(n.commission_amount || 0).toFixed(2)}</div>
-								${marginLine}
 							</div>
 						`;
-					}
 
-					const dueDateStr = n.ve_ne_fecha_vencimiento || "";
-					const dueBadge = n.is_overdue
-						? `<div class="mt-1"><span class="label" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-size:10px;font-weight:700;">VENCIDA (${Number(n.days_overdue || 0)}d)</span></div>`
-						: "";
-					const dueHtml = dueDateStr
-						? `<div class="small ${n.is_overdue ? "text-danger font-weight-bold" : "text-muted"}">Vence: ${frappe.utils.escape_html(dueDateStr)}</div>${dueBadge}`
-						: "";
+						let commissionCellHtml = `<span class="text-muted small">Sin comisión</span>`;
+						if (n.ve_ne_estado === "Cancelada") {
+							commissionCellHtml = `<span class="text-muted small">Anulada ($0.00)</span>`;
+						} else if (n.commission_excluded) {
+							commissionCellHtml = `<span class="text-muted small">Sin comisión</span>`;
+						} else if (n.commission_option || Number(n.commission_pct || 0) > 0) {
+							const optLabel = n.commission_option || `${Number(n.commission_pct || 0).toFixed(0)}%`;
+							const cUsd = Number(n.commission_usd || 0);
+							const cBs = Number(n.commission_bs || 0);
+							const splitLine = (cUsd > 0 || cBs > 0)
+								? `<div style="font-size:11px;color:#0f766e;">$${cUsd.toFixed(2)} + ${this.formatBs(cBs)}</div>`
+								: "";
+							commissionCellHtml = `
+								<div class="small">
+									<span class="label" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:10px;">${frappe.utils.escape_html(optLabel)}</span>
+									<div style="color:#5b21b6;font-weight:700;margin-top:2px;">$${Number(n.commission_amount || 0).toFixed(2)}</div>
+									${splitLine}
+								</div>
+							`;
+						}
 
-					return `
-						<tr>
-							<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a>${originBadge}</td>
-							<td>${frappe.utils.escape_html(n.posting_date || "")}${dueHtml}</td>
-							<td>${frappe.utils.escape_html(n.customer_name || n.customer || "")}${n.ve_ne_cliente_telefono ? `<div class="small text-muted">${frappe.utils.escape_html(n.ve_ne_cliente_telefono)}</div>` : ""}</td>
-							<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
-							<td class="small">${itemsText}${moreItems}${shipInfo}${globalDiscBadge}${noteDiscountBadge}</td>
-							<td class="text-right font-weight-bold">${amountCellHtml}</td>
-							<td>${commissionCellHtml}</td>
-							<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
-							<td>${resolutionHtml}</td>
-							<td>${actionsHtml}</td>
-						</tr>
-					`;
-				})
-				.join("")
-		);
+						const dueDateStr = n.ve_ne_fecha_vencimiento || "";
+						const dueHtml = dueDateStr
+							? `<div class="small ${n.is_overdue ? "text-danger font-weight-bold" : "text-muted"}">Vence: ${frappe.utils.escape_html(dueDateStr)}${n.is_overdue ? ` (VENCIDA ${n.days_overdue}d)` : ""}</div>`
+							: "";
+						const originBadge =
+							n.ve_ne_origen === "Tienda Web"
+								? `<div><span class="label" style="background:#dbeafe;color:#1e40af;font-size:10px;">Tienda Web</span></div>`
+								: n.ve_ne_origen === "MercadoLibre" || String(n.canal_venta || "").toLowerCase().includes("mercado")
+									? `<div><span class="label" style="background:#fef9c3;color:#854d0e;font-size:10px;">MercadoLibre</span></div>`
+									: "";
+						const noteDiscBadge = n.has_discount
+							? `<div class="mt-1"><span class="label" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;">Con descuento</span></div>`
+							: "";
+						const frozenBs = Number(n.total_bs || n.paid_bs || 0);
+						const histBsHtml = n.ve_ne_estado === "Pagada" && frozenBs > 0
+							? `<div class="small text-muted" title="Referencia histórica congelada">${this.formatBs(frozenBs)} <span style="font-size:10px;">(hist.)</span></div>`
+							: "";
+
+						return `
+							<tr>
+								<td><a href="/app/delivery-note/${encodeURIComponent(n.name)}"><strong>${frappe.utils.escape_html(n.name)}</strong></a>${originBadge}</td>
+								<td>${frappe.utils.escape_html(n.posting_date || "")}${dueHtml}</td>
+								<td>${frappe.utils.escape_html(n.seller_name || n.seller_user || "")}</td>
+								<td class="small">${itemsText}${moreItems}${noteDiscBadge}</td>
+								<td class="text-right font-weight-bold">$${Number(n.total_to_pay || n.amount || 0).toFixed(2)}${histBsHtml}<div class="small text-muted">Resta: $${Number(n.remaining_amount || 0).toFixed(2)}</div></td>
+								<td>${commissionCellHtml}</td>
+								<td><span class="cima-ne-badge ${badgeClass}">${frappe.utils.escape_html(n.ve_ne_estado)}</span></td>
+								<td>${resolutionHtml}</td>
+								<td>${actionsHtml}</td>
+							</tr>
+						`;
+					})
+					.join("");
+
+				return `
+					<div class="cima-ne-card mb-3" style="border-left:4px solid ${Number(client.overdue_count || 0) > 0 ? "#dc2626" : canPayClient ? "#2563eb" : "#16a34a"};">
+						<div class="d-flex justify-content-between align-items-center flex-wrap mb-2" style="gap:10px;">
+							<div>
+								<h4 style="margin:0;font-weight:700;">${frappe.utils.escape_html(client.customer_name || client.customer)} ${overdueBadge}</h4>
+								<div class="small text-muted">
+									${client.customer_email ? `📧 ${frappe.utils.escape_html(client.customer_email)} · ` : ""}
+									${client.customer_phone ? `📱 ${frappe.utils.escape_html(client.customer_phone)} · ` : ""}
+									${client.total_notes_count} nota(s) (${client.pending_notes_count} pendiente(s), ${client.paid_notes_count} pagada(s))
+									${client.oldest_due_date ? ` · Vence más próxima: <strong>${frappe.utils.escape_html(client.oldest_due_date)}</strong>` : ""}
+								</div>
+							</div>
+							<div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+								<div class="text-right">
+									<div class="small text-muted">Saldo Pendiente Cliente</div>
+									<div style="font-size:17px;font-weight:800;color:${canPayClient ? "#1d4ed8" : "#15803d"};">$${pendingUsd.toFixed(2)}${pendingBsHtml}</div>
+								</div>
+								<button type="button" class="btn btn-sm btn-default" data-doc-client="${frappe.utils.escape_html(client.customer)}">📄 Documento Cliente</button>
+								${canPayClient ? `<button type="button" class="btn btn-sm btn-success" data-pay-client="${frappe.utils.escape_html(client.customer)}">💳 Registrar Pago Cliente</button>` : `<span class="label label-success">Al día</span>`}
+							</div>
+						</div>
+						<div class="table-responsive">
+							<table class="table table-bordered table-hover table-sm mb-0">
+								<thead>
+									<tr>
+										<th>Nota (FIFO)</th>
+										<th>Fecha</th>
+										<th>Vendedor</th>
+										<th>Productos</th>
+										<th class="text-right">Monto / Saldo</th>
+										<th>Comisión ($ / Bs)</th>
+										<th>Estado</th>
+										<th>Pagos / Factura</th>
+										<th>Acciones</th>
+									</tr>
+								</thead>
+								<tbody>${rowsHtml}</tbody>
+							</table>
+						</div>
+					</div>
+				`;
+			})
+			.join("");
+
+		container.html(cardsHtml);
 	}
 
 	formatBs(amount) {
@@ -477,82 +431,59 @@ class CimaNotasEntrega {
 		})}`;
 	}
 
-	openPaidDialog(note) {
+	openClientPaymentDialog(client) {
 		const cfg = this.data?.config || {};
 		const fx = cfg.exchange_rate || {};
 		const fxRate = Number(fx.adjusted_rate || fx.bcv_rate || 0);
 		const ivaRate = Number(cfg.iva_rate || 16);
 		const igtfRate = Number(cfg.igtf_rate || 3);
-		const methods = cfg.payment_methods || ["Contado USD", "Pago Móvil / Bs", "Cashea", "Punto de Venta"];
-		const baseAmount = Number(note.net_total || note.amount || 0);
-		const hasExistingInvoice = Boolean(note.ve_ne_factura);
-		const alreadyPaid = Number(note.paid_amount || 0);
-		const alreadyPaidBs = Number(note.paid_bs || 0);
-		const existingTotal = Number(note.total_to_pay || baseAmount);
-		const existingRemaining = hasExistingInvoice
-			? Math.max(Number((existingTotal - alreadyPaid).toFixed(2)), 0)
-			: baseAmount;
-		const history = Array.isArray(note.payment_history) ? note.payment_history : [];
-
-		const historyBanner = history.length
-			? `<div class="mt-2 p-2 small" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;">
-				<div><strong>Pagos anteriores:</strong> $${alreadyPaid.toFixed(2)}${alreadyPaidBs > 0 ? ` (${this.formatBs(alreadyPaidBs)})` : ""} de $${existingTotal.toFixed(2)} · <strong>Saldo pendiente: $${existingRemaining.toFixed(2)}</strong></div>
-				${history
-					.map(
-						(h, idx) => {
-							const proof = h.screenshot_url
-								? ` · <a href="${encodeURI(h.screenshot_url)}" target="_blank" rel="noopener">📎 Ver captura</a>`
-								: "";
-							const hBs = Number(h.amount_bs || 0) > 0 ? ` (${this.formatBs(h.amount_bs)})` : "";
-							return `<div class="text-muted">• Abono #${idx + 1}: $${Number(h.amount || 0).toFixed(2)}${hBs} (${frappe.utils.escape_html(h.method || "")}${h.reference ? ` · Ref: ${frappe.utils.escape_html(h.reference)}` : ""}${proof}) — ${frappe.utils.escape_html((h.paid_at || "").slice(0, 16))}</div>`;
-						}
-					)
-					.join("")}
-			</div>`
-			: "";
+		const methods = cfg.payment_methods || ["Efectivo USD", "Pago Móvil / Bs", "Zelle", "Binance Pay"];
+		const methodCurrencies = cfg.payment_method_currencies || {};
+		const pendingNotes = (client.notes || []).filter(
+			(n) => (n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial") && Number(n.remaining_amount || 0) > 0.01
+		);
+		const totalPending = Number(client.pending_amount || 0);
 
 		const d = new frappe.ui.Dialog({
-			title: `Registrar Pago — ${note.name}`,
+			title: `Registrar Pago Cliente — ${client.customer_name || client.customer}`,
+			size: "large",
 			fields: [
 				{
 					fieldtype: "HTML",
 					fieldname: "client_info",
-					options: `<div class="mb-2"><strong>Cliente:</strong> ${frappe.utils.escape_html(note.customer_name || note.customer)} · <strong>Base:</strong> $${baseAmount.toFixed(2)}${historyBanner}</div>`,
+					options: `<div class="mb-2"><strong>Cliente:</strong> ${frappe.utils.escape_html(client.customer_name || client.customer)} · <strong>Saldo pendiente total:</strong> $${totalPending.toFixed(2)} · <strong>${pendingNotes.length} nota(s) pendientes</strong> (se aplicará a las más antiguas primero).</div>`,
 				},
 				{
 					label: "Método de Pago",
 					fieldname: "payment_method",
 					fieldtype: "Select",
 					options: methods.join("\n"),
-					default: note.ve_ne_metodo_pago && methods.includes(note.ve_ne_metodo_pago) ? note.ve_ne_metodo_pago : methods[0],
+					default: methods[0],
 					reqd: 1,
 				},
 				{
 					label: `Aplica IVA (${ivaRate}%)`,
 					fieldname: "apply_iva",
 					fieldtype: "Check",
-					default: hasExistingInvoice ? (note.ve_ne_aplica_iva ? 1 : 0) : 1,
-					read_only: hasExistingInvoice ? 1 : 0,
+					default: 0,
 				},
 				{
 					label: `Aplica IGTF (${igtfRate}% Divisas)`,
 					fieldname: "apply_igtf",
 					fieldtype: "Check",
-					default: hasExistingInvoice ? (note.ve_ne_aplica_igtf ? 1 : 0) : 0,
-					read_only: hasExistingInvoice ? 1 : 0,
+					default: 0,
 				},
 				{
-					label: "Monto que pagó ($)",
+					label: "Monto pagado por el cliente ($)",
 					fieldname: "paid_amount",
 					fieldtype: "Float",
 					reqd: 1,
-					default: hasExistingInvoice ? existingRemaining : Number((baseAmount * (1 + ivaRate / 100)).toFixed(2)),
+					default: totalPending,
 				},
 				{
 					label: "Número de Referencia",
 					fieldname: "reference",
 					fieldtype: "Data",
-					default: note.ve_ne_referencia_pago || "",
 					description: "Número de referencia o confirmación del pago (no aplica para efectivo).",
 				},
 				{
@@ -572,7 +503,7 @@ class CimaNotasEntrega {
 					options: "",
 				},
 			],
-			primary_action_label: "Registrar Pago",
+			primary_action_label: "Registrar Pago (FIFO)",
 			primary_action: async (values) => {
 				const payAmt = Number(values.paid_amount);
 				if (isNaN(payAmt) || payAmt <= 0) {
@@ -580,10 +511,10 @@ class CimaNotasEntrega {
 					return;
 				}
 				const isCash = isCashMethod(values.payment_method);
-				let screenshotUrl = note.ve_ne_comprobante_url || "";
+				let screenshotUrl = "";
 				const fileInput = d.$wrapper.find("#ne-payment-screenshot")[0];
 				const file = fileInput && fileInput.files && fileInput.files[0];
-				if (file) {
+				if (file && pendingNotes.length) {
 					if (file.size > 5 * 1024 * 1024) {
 						frappe.msgprint("El comprobante supera el tamaño máximo permitido de 5 MB.");
 						return;
@@ -598,44 +529,41 @@ class CimaNotasEntrega {
 						const up = await frappe.call({
 							method: "cima_ve.api.delivery_notes.upload_delivery_note_payment_proof",
 							args: {
-								delivery_note: note.name,
+								delivery_note: pendingNotes[0].name,
 								file_name: file.name,
 								file_data_base64: b64,
 							},
 						});
-						if (!up || !up.message || !up.message.file_url) {
-							frappe.msgprint("No se pudo subir la captura de pantalla. Intenta nuevamente.");
-							return;
+						if (up && up.message && up.message.file_url) {
+							screenshotUrl = up.message.file_url;
 						}
-						screenshotUrl = up.message.file_url;
 					} catch (err) {
 						const detail = err?.message || err?._server_messages || "";
-						frappe.msgprint(`Error al subir la captura de pantalla.${detail ? ` (${frappe.utils.escape_html(String(detail))})` : ""}`);
+						frappe.msgprint(`Error al subir la captura.${detail ? ` (${frappe.utils.escape_html(String(detail))})` : ""}`);
 						return;
 					}
 				}
 				frappe.call({
-					method: "cima_ve.api.delivery_notes.mark_delivery_note_paid",
+					method: "cima_ve.api.delivery_notes.register_client_payment",
 					args: {
-						delivery_note: note.name,
+						customer: client.customer,
 						payment_method: values.payment_method,
+						paid_amount: payAmt,
 						apply_iva: values.apply_iva ? 1 : 0,
 						apply_igtf: values.apply_igtf ? 1 : 0,
 						reference: isCash ? "" : values.reference || "",
-						paid_amount: payAmt,
 						screenshot_url: screenshotUrl,
+						seller: this.filters.seller || "",
 					},
 					freeze: true,
-					freeze_message: "Registrando pago...",
+					freeze_message: "Aplicando pago a Notas de Entrega más antiguas...",
 					callback: (r) => {
 						if (r.message && r.message.ok) {
 							d.hide();
-							const isDone = r.message.ve_ne_estado === "Pagada";
+							const cnt = (r.message.allocations || []).length;
 							frappe.show_alert({
-								message: isDone
-									? `Nota ${note.name} PAGADA en su totalidad ($${Number(r.message.paid_total).toFixed(2)})`
-									: `Abono de $${Number(r.message.paid_now).toFixed(2)} registrado en ${note.name}. Resta: $${Number(r.message.remaining_amount).toFixed(2)}`,
-								indicator: isDone ? "green" : "blue",
+								message: `Pago de $${Number(r.message.payment_amount).toFixed(2)} aplicado a ${cnt} nota(s) de ${client.customer_name || client.customer}.`,
+								indicator: "green",
 							});
 							this.loadNotes();
 						}
@@ -656,70 +584,68 @@ class CimaNotasEntrega {
 			d.$wrapper.find("#ne-screenshot-group").show();
 		};
 
-		let userEditedAmount = hasExistingInvoice;
-		const computeTargetTotal = () => {
-			if (hasExistingInvoice) {
-				return { iva: 0, igtf: 0, total: existingTotal, remainingBefore: existingRemaining };
-			}
-			const applyIva = !!d.get_value("apply_iva");
-			const applyIgtf = !!d.get_value("apply_igtf");
-			const iva = Number((applyIva ? baseAmount * (ivaRate / 100) : 0).toFixed(2));
-			const subWithIva = baseAmount + iva;
-			const igtf = Number((applyIgtf ? subWithIva * (igtfRate / 100) : 0).toFixed(2));
-			const total = Number((subWithIva + igtf).toFixed(2));
-			return { iva, igtf, total, remainingBefore: total };
-		};
-
-		const updatePreview = (syncAmount = false) => {
-			const calc = computeTargetTotal();
-			if (syncAmount && !userEditedAmount) {
-				d.set_value("paid_amount", calc.remainingBefore);
-			}
+		const updatePreview = () => {
 			const rawPay = parseFloat(d.get_value("paid_amount"));
 			const payAmt = isNaN(rawPay) ? 0 : rawPay;
-			const remainingAfter = Math.max(Number((calc.remainingBefore - payAmt).toFixed(2)), 0);
-			const invalidAmt = payAmt <= 0 || payAmt > calc.remainingBefore + 0.01;
-			const nextStateLabel = invalidAmt
-				? `<span class="text-danger">Monto inválido (máximo $${calc.remainingBefore.toFixed(2)})</span>`
-				: remainingAfter <= 0.01
-				? `<span style="color:#15803d;font-weight:700;">Quedará PAGADA (saldrá de pendientes)</span>`
-				: `<span style="color:#1e40af;font-weight:700;">Quedará PAGO PARCIAL (seguirá visible hasta pagar $${remainingAfter.toFixed(2)} restantes)</span>`;
-
-			const remBeforeBs = fxRate > 0 ? ` <span class="text-primary">(${this.formatBs(calc.remainingBefore * fxRate)})</span>` : "";
-			const payAmtBs = fxRate > 0 ? ` <span class="text-primary">(${this.formatBs(payAmt * fxRate)})</span>` : "";
-			const remAfterBs = fxRate > 0 && remainingAfter > 0 ? ` (${this.formatBs(remainingAfter * fxRate)})` : "";
-			const rateNote = fxRate > 0
-				? `<div class="small text-muted mt-1">Tasa actual: <strong>Bs. ${fxRate.toFixed(2)} / USD</strong> · Al registrar el pago se guardará el monto en Bs como referencia histórica.</div>`
-				: "";
-
+			const method = d.get_value("payment_method") || "";
+			const curr = methodCurrencies[method] || "USD";
+			let remPay = payAmt;
+			const allocRows = pendingNotes.map((n) => {
+				const rem = Number(n.remaining_amount || 0);
+				const alloc = remPay > 0.01 ? Math.min(remPay, rem) : 0;
+				remPay = Math.max(remPay - alloc, 0);
+				const statusNext = alloc >= rem - 0.01 ? "<span class='text-success'>Pagada</span>" : alloc > 0 ? "<span class='text-primary'>Pago Parcial</span>" : "<span class='text-muted'>Sin cambio</span>";
+				return `<tr><td>${frappe.utils.escape_html(n.name)}</td><td>${frappe.utils.escape_html(n.posting_date || "")}</td><td class="text-right">$${rem.toFixed(2)}</td><td class="text-right"><strong>$${alloc.toFixed(2)}</strong></td><td>${statusNext}</td></tr>`;
+			}).join("");
+			const bsInfo = fxRate > 0 ? ` (${this.formatBs(payAmt * fxRate)})` : "";
 			d.fields_dict.totals_preview.$wrapper.html(`
 				<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:6px;">
-					${hasExistingInvoice ? `<div>Total Facturado: <strong>$${calc.total.toFixed(2)}</strong> · Ya Pagado: <strong>$${alreadyPaid.toFixed(2)}${alreadyPaidBs > 0 ? ` (${this.formatBs(alreadyPaidBs)})` : ""}</strong></div>` : `<div>Base: <strong>$${baseAmount.toFixed(2)}</strong> · IVA: <strong>$${calc.iva.toFixed(2)}</strong> · IGTF: <strong>$${calc.igtf.toFixed(2)}</strong></div>`}
-					<div>Saldo pendiente actual: <strong>$${calc.remainingBefore.toFixed(2)}</strong>${remBeforeBs}</div>
-					<div>Este pago: <strong>$${payAmt.toFixed(2)}</strong>${payAmtBs} · Saldo restante: <strong>$${remainingAfter.toFixed(2)}</strong>${remAfterBs}</div>
-					${rateNote}
-					<div class="mt-1 small">${nextStateLabel}</div>
+					<div><strong>Método:</strong> ${frappe.utils.escape_html(method)} <span class="label label-default">${curr}</span> · <strong>Pago:</strong> $${payAmt.toFixed(2)}${bsInfo}</div>
+					<table class="table table-bordered table-condensed table-sm mt-2 mb-0" style="font-size:12px;">
+						<thead><tr><th>Nota (más antigua primero)</th><th>Fecha</th><th class="text-right">Pendiente</th><th class="text-right">Se aplica</th><th>Nuevo estado</th></tr></thead>
+						<tbody>${allocRows}</tbody>
+					</table>
 				</div>
 			`);
 		};
 
-		if (!hasExistingInvoice) {
-			d.fields_dict.apply_iva.$input.on("change", () => updatePreview(true));
-			d.fields_dict.apply_igtf.$input.on("change", () => updatePreview(true));
-		}
-		d.fields_dict.payment_method.$input.on("change", () => toggleProofFields());
-		d.fields_dict.paid_amount.$input.on("input change", () => {
-			userEditedAmount = true;
-			updatePreview(false);
+		d.fields_dict.payment_method.$input.on("change", () => {
+			toggleProofFields();
+			updatePreview();
 		});
+		d.fields_dict.paid_amount.$input.on("input change", () => updatePreview());
 		d.$wrapper.on("change", "#ne-payment-screenshot", (e) => {
 			const file = e.target.files && e.target.files[0];
 			d.$wrapper.find("#ne-screenshot-preview").text(file ? `Archivo seleccionado: ${file.name}` : "");
 		});
 		d.show();
 		toggleProofFields();
-		updatePreview(!hasExistingInvoice);
+		updatePreview();
 		setTimeout(() => d.fields_dict.paid_amount.$input.focus().select(), 80);
+	}
+
+	openDocumentPreview({ delivery_note = "", customer = "" }) {
+		frappe.call({
+			method: "cima_ve.api.delivery_notes.get_delivery_note_document",
+			args: { delivery_note, customer },
+			freeze: true,
+			freeze_message: "Generando documento...",
+			callback: (r) => {
+				if (!r.message || !r.message.html) return;
+				const win = window.open("", "_blank");
+				if (win) {
+					win.document.open();
+					win.document.write(r.message.html);
+					win.document.close();
+				} else {
+					frappe.msgprint({
+						title: "Documento Generado",
+						message: r.message.html,
+						wide: true,
+					});
+				}
+			},
+		});
 	}
 
 	openUploadProofDialog(note) {
@@ -869,7 +795,8 @@ class CimaNotasEntrega {
 							<td class="text-right">$${Number(b.sales_total || 0).toFixed(2)}</td>
 							<td class="text-right">$${Number(b.cost_total || 0).toFixed(2)}</td>
 							<td class="text-right">$${Number(b.margin_total || 0).toFixed(2)}</td>
-							<td class="text-right text-success">$${Number(b.paid_commission || 0).toFixed(2)}</td>
+							<td class="text-right text-success">$${Number(b.commission_usd || 0).toFixed(2)}</td>
+							<td class="text-right text-primary"><strong>${this.formatBs(b.commission_bs || 0)}</strong><div class="text-muted small">(equiv. $${Number(b.commission_bs_usd_equiv || 0).toFixed(2)})</div></td>
 							<td class="text-right text-warning">$${Number(b.pending_commission || 0).toFixed(2)}</td>
 							<td class="text-right" style="font-weight:700;color:#5b21b6;">$${Number(b.commission_total || 0).toFixed(2)}</td>
 						</tr>`
@@ -917,9 +844,10 @@ class CimaNotasEntrega {
 												<th class="text-right">Ventas Netas</th>
 												<th class="text-right">Costo</th>
 												<th class="text-right">Margen</th>
-												<th class="text-right">Com. Pagadas</th>
+												<th class="text-right">A Pagar en $</th>
+												<th class="text-right">A Pagar en Bs</th>
 												<th class="text-right">Com. Pendientes</th>
-												<th class="text-right">Total Comisión</th>
+												<th class="text-right">Total Comisión ($)</th>
 											</tr>
 										</thead>
 										<tbody>${rowsHtml}</tbody>

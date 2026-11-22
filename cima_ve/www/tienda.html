@@ -20,11 +20,6 @@
         </span>
       </a>
 
-      <div class="cima-deliver-pill" title="Despacho desde almacén principal">
-        <span class="cima-deliver-label">Envíos desde</span>
-        <strong id="nav-warehouse">Venezuela</strong>
-      </div>
-
       <form id="nav-search-form" class="cima-search-bar">
         <select id="nav-category-select" aria-label="Categoría">
           <option value="">Todas</option>
@@ -46,6 +41,11 @@
         <button type="button" id="btn-account" class="cima-nav-btn">
           <span class="cima-nav-small" id="nav-user-greeting">Hola, Identifícate</span>
           <strong class="cima-nav-big" id="nav-user-label">Cuenta y RIF</strong>
+        </button>
+
+        <button type="button" id="btn-contact" class="cima-nav-btn">
+          <span class="cima-nav-small">Atención</span>
+          <strong class="cima-nav-big">Contáctanos</strong>
         </button>
 
         <button type="button" id="btn-orders" class="cima-nav-btn">
@@ -124,6 +124,10 @@
       <div class="cima-results-info" id="results-info">Cargando productos...</div>
       <div class="cima-toolbar-controls">
         <label class="cima-toggle">
+          <input type="checkbox" id="filter-mayorista" />
+          <span>Ver precios Mayorista</span>
+        </label>
+        <label class="cima-toggle">
           <input type="checkbox" id="filter-in-stock" checked />
           <span>Solo con stock disponible</span>
         </label>
@@ -187,8 +191,16 @@
     </div>
   </div>
 
+  <!-- Contact / Mayorista Modal -->
+  <div id="contact-modal" class="cima-modal hidden">
+    <div class="cima-modal-card">
+      <button type="button" class="cima-close-btn cima-modal-close" data-close="contact-modal">&times;</button>
+      <div id="contact-modal-body"></div>
+    </div>
+  </div>
+
   <div id="cima-toast" class="cima-toast hidden"></div>
 </div>
 
-<script src="/assets/cima_ve/js/tienda.js?v=2"></script>
+<script src="/assets/cima_ve/js/tienda.js?v=3"></script>
 {% endblock %}

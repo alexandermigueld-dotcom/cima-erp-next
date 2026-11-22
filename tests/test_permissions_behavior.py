@@ -306,8 +306,10 @@ class AdminOnlyEndpointTests(unittest.TestCase):
 
         fk.get_doc = lambda *a, **k: OtherDoc()
         with patched_frappe(fk):
-            with self.assertRaises(FakePermissionError):
+            # Per-note payment is blocked globally
+            with self.assertRaises(Exception) as ctx:
                 dn.mark_delivery_note_paid("MAT-DN-2", "Efectivo")
+            self.assertIn("deshabilitado", str(ctx.exception))
             with self.assertRaises(FakePermissionError):
                 dn.upload_delivery_note_payment_proof("MAT-DN-2", "proof.png", "AAAA")
 
@@ -350,11 +352,10 @@ class AdminOnlyEndpointTests(unittest.TestCase):
             self.assertEqual(inserted[0][0]["attached_to_name"], "MAT-DN-1")
             self.assertEqual(inserted[0][0]["is_private"], 1)
 
-            # mark_delivery_note_paid passes ownership check and reaches state validation ("Pagada")
+            # mark_delivery_note_paid is blocked globally in favor of client-level FIFO payment
             with self.assertRaises(Exception) as ctx:
                 dn.mark_delivery_note_paid("MAT-DN-1", "Efectivo")
-            self.assertNotIsInstance(ctx.exception, FakePermissionError)
-            self.assertIn("ya fue pagada", str(ctx.exception))
+            self.assertIn("deshabilitado", str(ctx.exception))
             self.assertEqual(fk.session.user, "seller@x.com")
 
     def test_seller_cannot_read_admin_reports(self) -> None:
