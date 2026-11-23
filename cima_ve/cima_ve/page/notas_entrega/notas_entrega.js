@@ -127,12 +127,6 @@ class CimaNotasEntrega {
 			if (dnName) this.openDocumentPreview({ delivery_note: dnName });
 		});
 
-		root.on("click", "[data-proof-dn]", (e) => {
-			const dnName = $(e.currentTarget).attr("data-proof-dn");
-			const note = (this.data?.notes || []).find((n) => n.name === dnName);
-			if (note) this.openUploadProofDialog(note);
-		});
-
 		root.on("click", "[data-revert-dn]", (e) => {
 			const dnName = $(e.currentTarget).attr("data-revert-dn");
 			const note = (this.data?.notes || []).find((n) => n.name === dnName);
@@ -313,11 +307,9 @@ class CimaNotasEntrega {
 						}
 
 						const canRevert = isAdmin && n.ve_ne_estado !== "Cancelada";
-						const isPayable = n.ve_ne_estado === "Pendiente" || n.ve_ne_estado === "Pago Parcial";
 						const actionsHtml = `
 							<div class="cima-ne-actions">
 								<button type="button" class="btn btn-xs btn-default" data-doc-dn="${frappe.utils.escape_html(n.name)}" title="Generar documento imprimible">📄 Documento</button>
-								${isPayable ? `<button type="button" class="btn btn-xs btn-default" data-proof-dn="${frappe.utils.escape_html(n.name)}">📎 Captura</button>` : ""}
 								${canRevert ? `<button type="button" class="btn btn-xs btn-danger" data-revert-dn="${frappe.utils.escape_html(n.name)}">Revertir</button>` : ""}
 							</div>
 						`;
@@ -646,70 +638,6 @@ class CimaNotasEntrega {
 				}
 			},
 		});
-	}
-
-	openUploadProofDialog(note) {
-		const currentProof = note.ve_ne_comprobante_url
-			? `<div class="mb-2 small">Comprobante actual: <a href="${encodeURI(note.ve_ne_comprobante_url)}" target="_blank" rel="noopener">📎 Ver captura</a></div>`
-			: "";
-		const d = new frappe.ui.Dialog({
-			title: `Subir Comprobante — ${note.name}`,
-			fields: [
-				{
-					fieldtype: "HTML",
-					fieldname: "proof_box",
-					options: `
-						${currentProof}
-						<div class="form-group">
-							<label class="control-label small">Seleccionar Foto / Captura / PDF (máx. 5 MB)</label>
-							<input type="file" id="ne-standalone-screenshot" class="form-control input-sm" accept="image/*,.pdf" />
-						</div>
-					`,
-				},
-			],
-			primary_action_label: "Subir Comprobante",
-			primary_action: async () => {
-				const fileInput = d.$wrapper.find("#ne-standalone-screenshot")[0];
-				const file = fileInput && fileInput.files && fileInput.files[0];
-				if (!file) {
-					frappe.msgprint("Selecciona una imagen o PDF para subir.");
-					return;
-				}
-				if (file.size > 5 * 1024 * 1024) {
-					frappe.msgprint("El comprobante supera el tamaño máximo permitido de 5 MB.");
-					return;
-				}
-				try {
-					const b64 = await new Promise((resolve, reject) => {
-						const reader = new FileReader();
-						reader.onload = () => resolve(String(reader.result || ""));
-						reader.onerror = () => reject(new Error("read_error"));
-						reader.readAsDataURL(file);
-					});
-					const up = await frappe.call({
-						method: "cima_ve.api.delivery_notes.upload_delivery_note_payment_proof",
-						args: {
-							delivery_note: note.name,
-							file_name: file.name,
-							file_data_base64: b64,
-						},
-						freeze: true,
-						freeze_message: "Subiendo comprobante...",
-					});
-					if (!up || !up.message || !up.message.file_url) {
-						frappe.msgprint("No se pudo subir el comprobante. Intenta nuevamente.");
-						return;
-					}
-					d.hide();
-					frappe.show_alert({ message: `Comprobante adjuntado a ${note.name}.`, indicator: "green" });
-					this.loadNotes();
-				} catch (err) {
-					const detail = err?.message || "";
-					frappe.msgprint(`Error al subir el comprobante.${detail ? ` (${frappe.utils.escape_html(String(detail))})` : ""}`);
-				}
-			},
-		});
-		d.show();
 	}
 
 	openRevertDialog(note) {

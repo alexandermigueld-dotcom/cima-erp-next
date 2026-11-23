@@ -754,8 +754,9 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
         self.assertIn("LOWER(COALESCE(NULLIF(dn.ve_vendedor_usuario, ''), dn.owner)) = LOWER(%(current_user)s)", dn_py)
         self.assertIn('frappe.set_user("Administrator")', dn_py)
-        self.assertIn("openUploadProofDialog", ne_js)
-        self.assertIn("data-proof-dn", ne_js)
+        self.assertNotIn("openUploadProofDialog", ne_js)
+        self.assertNotIn("data-proof-dn", ne_js)
+        self.assertIn("openClientPaymentDialog", ne_js)
 
     def test_client_grouping_and_fifo_payment_allocation(self) -> None:
         from cima_ve.services.delivery_note_service import (
