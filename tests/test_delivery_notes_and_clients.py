@@ -713,6 +713,8 @@ class DeliveryNotePermissionTests(unittest.TestCase):
 
             @staticmethod
             def get_roles(user):
+                if user == "admin@x.com":
+                    return ["System Manager"]
                 return ["Sales User"]
 
         import sys
@@ -720,8 +722,9 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         sys.modules["frappe"] = FakeFrappe
         try:
             self.assertFalse(p.has_permission(Doc(), user="a@x.com"))
-            self.assertIsNone(p.has_permission(Doc(), user="b@x.com"))
-            self.assertIsNone(p.has_permission(Doc(), user="B@X.COM"))
+            self.assertIs(p.has_permission(Doc(), user="b@x.com"), True)
+            self.assertIs(p.has_permission(Doc(), user="B@X.COM"), True)
+            self.assertIs(p.has_permission(Doc(), user="admin@x.com"), True)
         finally:
             del sys.modules["frappe"]
 
