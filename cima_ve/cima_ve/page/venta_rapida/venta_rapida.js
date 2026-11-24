@@ -1155,6 +1155,9 @@ class CimaSellerPortal {
 		const seller = res.seller || {};
 		const sellerLabel = seller.fullname || seller.user || frappe.session.user_fullname || frappe.session.user || "";
 		const docName = res.delivery_note || res.invoice_name || "";
+		const pdfLink = docName
+			? ` · <a href="/api/method/cima_ve.api.delivery_notes.download_delivery_note_pdf?delivery_note=${encodeURIComponent(docName)}" target="_blank" rel="noopener" style="font-weight:700;">Descargar PDF</a>`
+			: "";
 		const notesLink = this.isAdmin()
 			? ` · <a href="/app/notas-entrega" style="font-weight:700;">Gestionar en Notas de Entrega</a>`
 			: ` · <a href="/app/notas-entrega" style="font-weight:700;">Ver en Mis Notas de Entrega</a>`;
@@ -1185,7 +1188,7 @@ class CimaSellerPortal {
 				<div><strong>Nota de Entrega emitida:</strong> ${frappe.utils.escape_html(docName)} — Total: ${frappe.utils.escape_html(res.currency)} ${Number(res.grand_total).toFixed(2)}${bannerBs}</div>
 				<div class="small mt-1">
 					<strong>Vendedor:</strong> ${frappe.utils.escape_html(sellerLabel)}${commOptText}${dueDateText} ·
-					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${notesLink}
+					<strong>Estado:</strong> ${frappe.utils.escape_html(res.ve_ne_estado || "Pendiente")}${notesLink}${pdfLink}
 				</div>
 				${globalDiscLine}
 				${discountLine}

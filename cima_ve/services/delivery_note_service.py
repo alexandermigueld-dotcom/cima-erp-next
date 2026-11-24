@@ -834,6 +834,8 @@ def build_overdue_delivery_notes_email_html(
 
 DEFAULT_NOTIFICATION_EMAILS = ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"]
 DEFAULT_NOTIFICATION_WHATSAPP = "+584243472198"
+DEFAULT_WHATSAPP_ORDERS_CHAT_ID = "120363407788420645@g.us"
+DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID = "120363402853406963@g.us"
 
 
 def parse_notification_emails(raw_emails: str | None) -> list[str]:
@@ -873,6 +875,7 @@ def build_delivery_note_notification_payload(
     whatsapp_number: str | None = None,
     email_recipients_raw: str | None = None,
     due_date: str = "",
+    posting_date: str = "",
 ) -> dict:
     """Construye el asunto, HTML, texto WhatsApp y enlace wa.me al crear cualquier Nota de Entrega."""
     from cima_ve.services.storefront_service import build_whatsapp_link
@@ -901,6 +904,8 @@ def build_delivery_note_notification_payload(
         f"Origen: {origin}",
         f"Cliente: {customer_name}",
     ]
+    if posting_date:
+        text_lines.append(f"Fecha: {posting_date}")
     if seller_name:
         text_lines.append(f"Vendedor: {seller_name}")
     if due_date:
@@ -934,6 +939,8 @@ def build_delivery_note_notification_payload(
 
     bs_html = f" <span style='color:#475569;font-size:14px;'>(Bs. {total_bs:,.2f})</span>" if total_bs > 0 else ""
     extra_html_rows = ""
+    if posting_date:
+        extra_html_rows += f"<p><strong>Fecha de emisión:</strong> {html.escape(str(posting_date))}</p>"
     if seller_name:
         extra_html_rows += f"<p><strong>Vendedor:</strong> {seller_name}</p>"
     if due_date:
@@ -1133,16 +1140,24 @@ def build_client_delivery_note_email_html(
     due_date: str = "",
     seller_name: str = "",
     discount_total: float = 0.0,
+    posting_date: str = "",
+    customer_phone: str = "",
 ) -> dict:
-    """Construye el correo de confirmación enviado directamente al cliente al crear una Nota de Entrega."""
+    """Construye el correo y mensaje WhatsApp de confirmación para el cliente al crear una Nota de Entrega."""
+    from cima_ve.services.storefront_service import build_whatsapp_link
+
     total_usd = round(float(grand_total or 0.0), 2)
     total_bs = round(total_usd * float(bs_rate or 0.0), 2) if float(bs_rate or 0.0) > 0 else 0.0
+    effective_date = str(posting_date or date.today().isoformat()).strip()
     rows_html = []
+    item_lines_txt = []
     for row in items or []:
-        name = html.escape(str(row.get("item_name") or row.get("item_code") or "Producto"))
+        raw_name = str(row.get("item_name") or row.get("item_code") or "Producto")
+        name = html.escape(raw_name)
         qty = float(row.get("qty") or 0)
         rate = float(row.get("rate") or 0)
         amt = round(float(row.get("amount") if row.get("amount") is not None else qty * rate), 2)
+        item_lines_txt.append(f"• {raw_name} x{qty:g} (${amt:.2f})")
         rows_html.append(
             f"<tr>"
             f"<td style='padding:6px 8px;border-bottom:1px solid #e2e8f0;'>{name}</td>"
@@ -1152,20 +1167,23 @@ def build_client_delivery_note_email_html(
             f"</tr>"
         )
     bs_line = f" <span style='color:#475569;font-size:13px;'>(Bs. {total_bs:,.2f})</span>" if total_bs > 0 else ""
+    date_line = f"<p><strong>Fecha de emisión:</strong> {html.escape(effective_date)}</p>" if effective_date else ""
     due_line = f"<p><strong>Fecha de vencimiento:</strong> {html.escape(str(due_date))}</p>" if due_date else ""
     seller_line = f"<p><strong>Asesor / Vendedor:</strong> {html.escape(str(seller_name))}</p>" if seller_name else ""
     disc_line = f"<p><strong>Descuento aplicado:</strong> -${float(discount_total):.2f}</p>" if float(discount_total or 0) > 0 else ""
 
-    subject = f"[CIMA Electronic VE] Nota de Entrega {delivery_note} — ${total_usd:.2f}"
+    subject = f"[CIMA Electronic VE] ¡Gracias por tu compra! Nota de Entrega {delivery_note} — ${total_usd:.2f}"
     body = f"""
     <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#0f172a;">
-      <div style="background:#0f172a;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0;">
+      <div style="background:#0f172a;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">
         <h2 style="margin:0;font-size:18px;">CIMA ELECTRONIC VE</h2>
         <p style="margin:4px 0 0;font-size:12px;color:#cbd5e1;">Comprobante de Nota de Entrega</p>
       </div>
-      <div style="border:1px solid #cbd5e1;border-top:none;padding:16px 18px;border-radius:0 0 8px 8px;">
-        <p>Hola <strong>{html.escape(customer_name)}</strong>,</p>
-        <p>Se ha registrado su Nota de Entrega <strong>{html.escape(delivery_note)}</strong>.</p>
+      <div style="border:1px solid #cbd5e1;border-top:none;padding:18px 20px;border-radius:0 0 8px 8px;">
+        <p>¡Hola <strong>{html.escape(customer_name)}</strong>!</p>
+        <p>Muchas gracias por comprar con <strong>CIMA Electronic VE</strong>. Para nosotros es un gusto atenderte y acompañarte en cada proyecto.</p>
+        <p>Hemos registrado tu Nota de Entrega <strong>{html.escape(delivery_note)}</strong> y adjuntamos el documento en formato <strong>PDF</strong> para tu respaldo.</p>
+        {date_line}
         {due_line}
         {seller_line}
         {disc_line}
@@ -1181,11 +1199,38 @@ def build_client_delivery_note_email_html(
           <tbody>{''.join(rows_html)}</tbody>
         </table>
         <p style="font-size:16px;margin-top:12px;"><strong>Total: ${total_usd:.2f}</strong>{bs_line}</p>
-        <p style="font-size:12px;color:#64748b;margin-top:16px;">Gracias por su compra en CIMA Electronic VE.</p>
+        <p style="font-size:13px;color:#334155;margin-top:16px;">¡Gracias por tu confianza! Si tienes alguna consulta sobre tu pedido, estamos siempre a tu disposición.</p>
       </div>
     </div>
     """
-    return {"subject": subject, "html": body}
+
+    wa_lines = [
+        f"¡Hola {customer_name}! Gracias por comprar con *CIMA Electronic VE*.",
+        "Para nosotros es un gusto atenderte. Te enviamos tu *Nota de Entrega* en PDF con todos los detalles de tu compra:",
+        f"• *Nota de Entrega:* {delivery_note}",
+        f"• *Fecha:* {effective_date}",
+    ]
+    if due_date:
+        wa_lines.append(f"• *Vencimiento:* {due_date}")
+    if seller_name:
+        wa_lines.append(f"• *Asesor:* {seller_name}")
+    if float(discount_total or 0) > 0:
+        wa_lines.append(f"• *Descuento aplicado:* -${float(discount_total):.2f}")
+    wa_lines.append("*Productos:*")
+    wa_lines.extend(item_lines_txt or ["• Ver detalle en el PDF adjunto"])
+    if total_bs > 0:
+        wa_lines.append(f"*Total:* ${total_usd:.2f} (Bs. {total_bs:,.2f})")
+    else:
+        wa_lines.append(f"*Total:* ${total_usd:.2f}")
+    wa_lines.append("¡Muchas gracias por confiar en CIMA Electronic VE! Estamos a tu orden para lo que necesites.")
+    wa_text = "\n".join(wa_lines)
+
+    return {
+        "subject": subject,
+        "html": body,
+        "whatsapp_text": wa_text,
+        "whatsapp_url": build_whatsapp_link(customer_phone, wa_text) if customer_phone else "",
+    }
 
 
 def build_delivery_note_document_html(
@@ -1196,6 +1241,7 @@ def build_delivery_note_document_html(
     company_name: str = "CIMA ELECTRONIC VE",
     logo_url: str = "/assets/cima_ve/images/cima-logo-color.png",
     generated_at: str = "",
+    pdf_download_url: str = "",
 ) -> str:
     """Genera un documento imprimible tipo factura para una Nota de Entrega individual o consolidado de un cliente."""
     cust_name = html.escape(str(customer_info.get("customer_name") or customer_info.get("customer") or "Cliente"))
@@ -1258,10 +1304,17 @@ def build_delivery_note_document_html(
         for n in notes
     )
 
+    download_btn_html = (
+        f'<a class="btn-print btn-download" href="{html.escape(pdf_download_url)}" target="_blank" rel="noopener">Descargar PDF</a>'
+        if pdf_download_url
+        else ""
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>{doc_title} - {cust_name}</title>
 <style>
   body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #f8fafc; }}
@@ -1273,14 +1326,25 @@ def build_delivery_note_document_html(
   .doc-title-box h1 {{ margin: 0; font-size: 18px; color: #0f172a; }}
   .doc-title-box p {{ margin: 4px 0 0; font-size: 12px; color: #475569; }}
   .doc-client {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; font-size: 13px; }}
-  table {{ width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 12.5px; }}
+  .table-wrap {{ width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 18px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 12.5px; }}
   th {{ background: #0f172a; color: #fff; padding: 8px; text-align: left; }}
   td {{ padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }}
-  .doc-totals {{ margin-left: auto; width: 320px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; font-size: 13px; }}
+  .doc-totals {{ margin-left: auto; width: 320px; max-width: 100%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; font-size: 13px; box-sizing: border-box; }}
   .doc-total-row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
   .doc-total-grand {{ font-size: 15px; font-weight: 700; border-top: 1px solid #cbd5e1; padding-top: 6px; margin-top: 6px; }}
-  .no-print {{ margin-bottom: 16px; display: flex; justify-content: flex-end; gap: 8px; }}
-  .btn-print {{ background: #0f172a; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }}
+  .no-print {{ margin-bottom: 16px; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }}
+  .btn-print {{ background: #0f172a; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; font-size: 13px; }}
+  .btn-download {{ background: #2563eb; }}
+  @media (max-width: 768px) {{
+    body {{ padding: 10px; }}
+    .doc-sheet {{ padding: 14px; border-radius: 8px; }}
+    .doc-header {{ flex-direction: column; gap: 12px; }}
+    .doc-title-box {{ text-align: left; }}
+    .doc-client {{ grid-template-columns: 1fr; }}
+    .no-print {{ justify-content: stretch; }}
+    .btn-print {{ flex: 1 1 auto; justify-content: center; padding: 10px 14px; }}
+  }}
   @media print {{ body {{ background: #fff; padding: 0; }} .doc-sheet {{ border: none; box-shadow: none; padding: 0; }} .no-print {{ display: none; }} }}
 </style>
 </head>
@@ -1288,6 +1352,7 @@ def build_delivery_note_document_html(
   <div class="doc-sheet">
     <div class="no-print">
       <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
+      {download_btn_html}
     </div>
     <div class="doc-header">
       <div class="doc-brand">
@@ -1313,6 +1378,7 @@ def build_delivery_note_document_html(
     </div>
 
     <h3 style="font-size:14px;margin:0 0 8px;">Resumen de Notas de Entrega</h3>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -1322,8 +1388,10 @@ def build_delivery_note_document_html(
       </thead>
       <tbody>{notes_summary_rows}</tbody>
     </table>
+    </div>
 
     <h3 style="font-size:14px;margin:0 0 8px;">Detalle de Productos</h3>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -1333,6 +1401,7 @@ def build_delivery_note_document_html(
       </thead>
       <tbody>{''.join(item_rows) or '<tr><td colspan="6" style="text-align:center;">Sin ítems detallados</td></tr>'}</tbody>
     </table>
+    </div>
 
     <div class="doc-totals">
       <div class="doc-total-row"><span>Total Notas:</span><strong>${total_amount:,.2f}{f' (Bs. {total_bs:,.2f})' if total_bs > 0 else ''}</strong></div>
@@ -1343,3 +1412,85 @@ def build_delivery_note_document_html(
   </div>
 </body>
 </html>"""
+
+
+def build_payment_registered_whatsapp_payload(
+    *,
+    customer_name: str,
+    payment_amount: float,
+    payment_method: str,
+    reference: str = "",
+    registered_by: str = "",
+    allocations: list[dict] | None = None,
+    total_pending_after: float = 0.0,
+    bs_rate: float = 0.0,
+    paid_now_bs: float = 0.0,
+    screenshot_url: str = "",
+    whatsapp_number: str | None = None,
+    chat_id: str | None = None,
+) -> dict:
+    """Construye el payload JSON y comprobante WhatsApp al registrar un pago de cliente."""
+    paid_usd = round(max(float(payment_amount or 0.0), 0.0), 2)
+    rate_bs = max(float(bs_rate or 0.0), 0.0)
+    paid_bs = round(float(paid_now_bs or 0.0), 2)
+    if paid_bs <= 0.0 and rate_bs > 0.0:
+        paid_bs = round(paid_usd * rate_bs, 2)
+    pending_after = round(max(float(total_pending_after or 0.0), 0.0), 2)
+    clean_customer = (customer_name or "").strip() or "Cliente"
+    clean_method = (payment_method or "").strip() or "Pago"
+    clean_ref = (reference or "").strip()
+    clean_user = (registered_by or "").strip()
+    clean_screenshot = (screenshot_url or "").strip()
+    target_wa = (whatsapp_number or "").strip() or DEFAULT_NOTIFICATION_WHATSAPP
+    target_chat_id = (chat_id or "").strip() or DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID
+
+    amount_line = f"Monto pagado: ${paid_usd:,.2f}"
+    if paid_bs > 0:
+        amount_line += f" (Bs. {paid_bs:,.2f})"
+
+    lines = [
+        "Pago registrado — CIMA Electronic VE",
+        f"Cliente: {clean_customer}",
+        amount_line,
+        f"Método de pago: {clean_method}",
+    ]
+    if clean_ref:
+        lines.append(f"Referencia: {clean_ref}")
+    if clean_user:
+        lines.append(f"Registrado por: {clean_user}")
+
+    dn_names: list[str] = []
+    alloc_rows = allocations or []
+    if alloc_rows:
+        lines.append("Notas aplicadas:")
+        for row in alloc_rows:
+            dn_name = str(row.get("delivery_note") or "").strip()
+            if dn_name:
+                dn_names.append(dn_name)
+            alloc_amt = round(float(row.get("allocated_amount") or row.get("paid_amount") or 0.0), 2)
+            estado = str(row.get("new_estado") or row.get("ve_ne_estado") or "").strip()
+            estado_txt = f" ({estado})" if estado else ""
+            lines.append(f"• {dn_name or 'Nota'}: ${alloc_amt:,.2f}{estado_txt}")
+
+    lines.append(f"Saldo pendiente del cliente: ${pending_after:,.2f}")
+    if clean_screenshot:
+        lines.append(f"Comprobante adjunto: {clean_screenshot}")
+
+    return {
+        "event": "payment_registered",
+        "recipient_type": "company_payments",
+        "chat_id": target_chat_id,
+        "to": target_wa,
+        "delivery_note": dn_names[0] if dn_names else "",
+        "delivery_notes": dn_names,
+        "customer_name": clean_customer,
+        "grand_total": paid_usd,
+        "payment_amount": paid_usd,
+        "payment_amount_bs": paid_bs,
+        "payment_method": clean_method,
+        "reference": clean_ref,
+        "registered_by": clean_user,
+        "total_pending_after": pending_after,
+        "screenshot_url": clean_screenshot,
+        "message": "\n".join(lines),
+    }

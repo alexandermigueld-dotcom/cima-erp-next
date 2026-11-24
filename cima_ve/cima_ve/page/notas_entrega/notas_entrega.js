@@ -617,25 +617,52 @@ class CimaNotasEntrega {
 	}
 
 	openDocumentPreview({ delivery_note = "", customer = "" }) {
+		const params = new URLSearchParams();
+		if (delivery_note) params.set("delivery_note", delivery_note);
+		if (!delivery_note && customer) params.set("customer", customer);
+		const pdfUrl = `/api/method/cima_ve.api.delivery_notes.download_delivery_note_pdf?${params.toString()}`;
+
+		// Open the tab synchronously during the user click so mobile browsers don't block it as a popup.
+		const win = window.open("", "_blank");
+		if (win) {
+			try {
+				win.document.open();
+				win.document.write(
+					'<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Generando Documento...</title></head><body style="font-family:Arial,sans-serif;padding:24px;text-align:center;color:#334155;">Generando Nota de Entrega...</body></html>'
+				);
+				win.document.close();
+			} catch (e) {}
+		}
+
 		frappe.call({
 			method: "cima_ve.api.delivery_notes.get_delivery_note_document",
 			args: { delivery_note, customer },
-			freeze: true,
+			freeze: !win,
 			freeze_message: "Generando documento...",
 			callback: (r) => {
-				if (!r.message || !r.message.html) return;
-				const win = window.open("", "_blank");
-				if (win) {
+				if (!r.message || !r.message.html) {
+					if (win && !win.closed) win.close();
+					return;
+				}
+				if (win && !win.closed) {
 					win.document.open();
 					win.document.write(r.message.html);
 					win.document.close();
 				} else {
+					const targetPdf = r.message.pdf_url || pdfUrl;
 					frappe.msgprint({
-						title: "Documento Generado",
-						message: r.message.html,
-						wide: true,
+						title: "Documento Listo",
+						message: `
+							<p>Tu navegador bloqueó la ventana emergente automática. Usa el botón para abrir o descargar el PDF en una pestaña completa:</p>
+							<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+								<a class="btn btn-primary btn-sm" href="${frappe.utils.escape_html(targetPdf)}" target="_blank" rel="noopener">Descargar PDF</a>
+							</div>
+						`,
 					});
 				}
+			},
+			error: () => {
+				if (win && !win.closed) win.close();
 			},
 		});
 	}

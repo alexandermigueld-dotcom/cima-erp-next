@@ -8,11 +8,14 @@ from cima_ve.services.delivery_note_service import (
     DEFAULT_COMMISSION_RULES,
     DEFAULT_NOTIFICATION_EMAILS,
     DEFAULT_NOTIFICATION_WHATSAPP,
+    DEFAULT_WHATSAPP_ORDERS_CHAT_ID,
+    DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID,
     allocate_client_payment_fifo,
     append_payment_history,
     build_client_delivery_note_email_html,
     build_delivery_note_document_html,
     build_delivery_note_notification_payload,
+    build_payment_registered_whatsapp_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_historical_bs_payment,
@@ -142,9 +145,100 @@ def _get_exchange_rate_snapshot() -> dict:
         return {"bcv_rate": 0.0, "adjusted_rate": 0.0, "applied_brecha_pct": 0.0}
 
 
-def send_delivery_note_created_notifications(doc, extra_info: dict | None = None) -> dict:
-    """Envía resumen por correo (cimaelectronic@gmail.com, alexandermigueld@gmail.com) y WhatsApp (+584243472198)."""
+def _generate_delivery_note_pdf_bytes_for_doc(
+    doc,
+    *,
+    bs_rate: float = 0.0,
+    client_email: str = "",
+    client_phone: str = "",
+) -> bytes | None:
+    """Genera los bytes del PDF de una Nota de Entrega individual para adjuntar en correo y WhatsApp."""
+    try:
+        import frappe
+        from frappe.utils.pdf import get_pdf
+
+        cust_name = str(getattr(doc, "customer", "") or "")
+        cust_doc = {}
+        if cust_name:
+            cust_doc = frappe.db.get_value(
+                "Customer",
+                cust_name,
+                ["customer_name", "tax_id", "ve_rif_cedula", "email_id", "mobile_no", "primary_address"],
+                as_dict=True,
+            ) or {}
+
+        customer_info = {
+            "customer": cust_name,
+            "customer_name": cust_doc.get("customer_name") or getattr(doc, "customer_name", None) or cust_name,
+            "rif_cedula": cust_doc.get("ve_rif_cedula") or cust_doc.get("tax_id") or "",
+            "email": client_email or cust_doc.get("email_id") or getattr(doc, "ve_ne_cliente_email", "") or "",
+            "phone": client_phone or cust_doc.get("mobile_no") or getattr(doc, "ve_ne_cliente_telefono", "") or "",
+            "address": cust_doc.get("primary_address") or getattr(doc, "ve_ne_envio_direccion", "") or "",
+        }
+        items_list = [
+            {
+                "item_code": r.item_code,
+                "item_name": getattr(r, "item_name", None) or r.item_code,
+                "qty": float(getattr(r, "qty", 0) or 0),
+                "rate": float(getattr(r, "rate", 0) or 0),
+                "amount": float(getattr(r, "amount", 0) or 0),
+            }
+            for r in (getattr(doc, "items", None) or [])
+        ]
+        grand_total = float(getattr(doc, "grand_total", 0.0) or 0.0)
+        note_row = {
+            "name": doc.name,
+            "posting_date": str(getattr(doc, "posting_date", "") or frappe.utils.today()),
+            "ve_ne_fecha_vencimiento": str(getattr(doc, "ve_ne_fecha_vencimiento", "") or ""),
+            "ve_ne_estado": getattr(doc, "ve_ne_estado", None) or "Pendiente",
+            "total_to_pay": grand_total,
+            "grand_total": grand_total,
+            "amount": grand_total,
+            "paid_amount": float(getattr(doc, "ve_ne_monto_pagado", 0.0) or 0.0),
+            "remaining_amount": float(getattr(doc, "ve_ne_saldo_pendiente", None) if getattr(doc, "ve_ne_saldo_pendiente", None) is not None else grand_total),
+            "discount_amount": float(getattr(doc, "discount_amount", 0.0) or 0.0),
+            "items": items_list,
+        }
+        logo_abs = "/assets/cima_ve/images/cima-logo-color.png"
+        try:
+            logo_abs = frappe.utils.get_url(logo_abs)
+        except Exception:
+            pass
+
+        doc_html = build_delivery_note_document_html(
+            customer_info=customer_info,
+            notes=[note_row],
+            bs_rate=bs_rate,
+            logo_url=logo_abs,
+            generated_at=str(getattr(doc, "posting_date", "") or frappe.utils.today()),
+        )
+        return get_pdf(doc_html)
+    except Exception:
+        try:
+            import frappe
+            frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note PDF Generation Error")
+        except Exception:
+            pass
+        return None
+
+
+def _post_whatsapp_webhook(webhook_url: str, token: str, payload_dict: dict) -> bool:
     import urllib.request
+
+    if not webhook_url or not (payload_dict.get("to") or "").strip():
+        return False
+    body = json.dumps(payload_dict).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(webhook_url, data=body, headers=headers, method="POST")
+    urllib.request.urlopen(req, timeout=12)
+    return True
+
+
+def send_delivery_note_created_notifications(doc, extra_info: dict | None = None) -> dict:
+    """Envía correo y WhatsApp con el PDF de la Nota de Entrega al cliente y a CIMA."""
+    import base64
     import frappe
 
     extra = extra_info or {}
@@ -152,9 +246,31 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
     raw_emails = (settings.get("notify_order_email") or "").strip() if settings.meta.has_field("notify_order_email") else ""
     target_wa = (settings.get("notify_whatsapp_number") or "").strip() if settings.meta.has_field("notify_whatsapp_number") else ""
     webhook_url = (settings.get("whatsapp_webhook_url") or "").strip() if settings.meta.has_field("whatsapp_webhook_url") else ""
+    orders_chat_id = (
+        (settings.get("whatsapp_orders_chat_id") or "").strip()
+        if settings.meta.has_field("whatsapp_orders_chat_id")
+        else ""
+    ) or DEFAULT_WHATSAPP_ORDERS_CHAT_ID
 
     fx = _get_exchange_rate_snapshot()
     bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+    posting_date = str(getattr(doc, "posting_date", "") or extra.get("posting_date") or frappe.utils.today())
+    due_date = str(getattr(doc, "ve_ne_fecha_vencimiento", "") or extra.get("due_date") or "")
+    seller_name = getattr(doc, "ve_vendedor_nombre", None) or getattr(doc, "owner", "") or ""
+    customer_name = getattr(doc, "customer_name", None) or doc.customer
+
+    client_email = (
+        getattr(doc, "ve_ne_cliente_email", None)
+        or extra.get("customer_email")
+        or _resolve_customer_email(doc.customer)
+        or ""
+    ).strip()
+    client_phone = (
+        getattr(doc, "ve_ne_cliente_telefono", None)
+        or extra.get("customer_phone")
+        or _resolve_customer_phone(doc.customer)
+        or ""
+    ).strip()
 
     items_list = [
         {
@@ -169,8 +285,8 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
 
     payload = build_delivery_note_notification_payload(
         delivery_note=doc.name,
-        customer_name=getattr(doc, "customer_name", None) or doc.customer,
-        seller_name=getattr(doc, "ve_vendedor_nombre", None) or getattr(doc, "owner", "") or "",
+        customer_name=customer_name,
+        seller_name=seller_name,
         origin=getattr(doc, "ve_ne_origen", None) or extra.get("origin") or "Facturación Rápida",
         items=items_list,
         grand_total=float(doc.grand_total or 0.0),
@@ -179,82 +295,123 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
         delivery_provider=getattr(doc, "ve_ne_envio_proveedor", None) or extra.get("delivery_provider") or "",
         delivery_cost=float(getattr(doc, "ve_ne_envio_costo", None) or extra.get("delivery_cost") or 0.0),
         delivery_address=getattr(doc, "ve_ne_envio_direccion", None) or extra.get("delivery_address") or "",
-        customer_email=getattr(doc, "ve_ne_cliente_email", None) or extra.get("customer_email") or "",
-        customer_phone=getattr(doc, "ve_ne_cliente_telefono", None) or extra.get("customer_phone") or "",
+        customer_email=client_email,
+        customer_phone=client_phone,
         payment_method=getattr(doc, "ve_ne_metodo_pago", None) or extra.get("payment_method") or "",
         payment_reference=getattr(doc, "ve_ne_referencia_pago", None) or extra.get("payment_reference") or "",
         payment_bank=getattr(doc, "ve_ne_banco_pago", None) or extra.get("payment_bank") or "",
         screenshot_url=getattr(doc, "ve_ne_comprobante_url", None) or extra.get("screenshot_url") or "",
         whatsapp_number=target_wa or DEFAULT_NOTIFICATION_WHATSAPP,
         email_recipients_raw=raw_emails or ", ".join(DEFAULT_NOTIFICATION_EMAILS),
-        due_date=str(getattr(doc, "ve_ne_fecha_vencimiento", "") or extra.get("due_date") or ""),
+        due_date=due_date,
+        posting_date=posting_date,
     )
 
+    pdf_bytes = _generate_delivery_note_pdf_bytes_for_doc(
+        doc,
+        bs_rate=bs_rate,
+        client_email=client_email,
+        client_phone=client_phone,
+    )
+    pdf_filename = f"Nota_de_Entrega_{doc.name}.pdf"
+    pdf_attachments = [{"fname": pdf_filename, "fcontent": pdf_bytes}] if pdf_bytes else None
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii") if pdf_bytes else ""
+
+    # 1. Correo a CIMA (único correo para control de pedidos, con PDF adjunto)
     email_sent = False
     try:
         frappe.sendmail(
             recipients=payload["email_recipients"],
             subject=payload["subject"],
             message=payload["html"],
+            attachments=pdf_attachments,
             now=True,
         )
         email_sent = True
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Email Notification Error")
 
-    client_email = (
-        getattr(doc, "ve_ne_cliente_email", None)
-        or extra.get("customer_email")
-        or ""
-    ).strip()
+    # 2. Correo + mensaje WhatsApp para el cliente (con PDF adjunto)
+    client_mail = build_client_delivery_note_email_html(
+        delivery_note=doc.name,
+        customer_name=customer_name,
+        items=items_list,
+        grand_total=float(doc.grand_total or 0.0),
+        bs_rate=bs_rate,
+        due_date=due_date,
+        seller_name=seller_name,
+        discount_total=float(getattr(doc, "discount_amount", 0.0) or 0.0),
+        posting_date=posting_date,
+        customer_phone=client_phone,
+    )
+
     client_email_sent = False
     if client_email and "@" in client_email:
         try:
-            client_mail = build_client_delivery_note_email_html(
-                delivery_note=doc.name,
-                customer_name=getattr(doc, "customer_name", None) or doc.customer,
-                items=items_list,
-                grand_total=float(doc.grand_total or 0.0),
-                bs_rate=bs_rate,
-                due_date=str(getattr(doc, "ve_ne_fecha_vencimiento", "") or extra.get("due_date") or ""),
-                seller_name=getattr(doc, "ve_vendedor_nombre", None) or getattr(doc, "owner", "") or "",
-                discount_total=float(getattr(doc, "discount_amount", 0.0) or 0.0),
-            )
             frappe.sendmail(
                 recipients=[client_email],
                 subject=client_mail["subject"],
                 message=client_mail["html"],
+                attachments=pdf_attachments,
                 now=True,
             )
             client_email_sent = True
         except Exception:
             frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Client Email Error")
 
+    # 3. WhatsApp a CIMA y al cliente (ambos con PDF en base64 si está disponible)
     whatsapp_sent = False
+    client_whatsapp_sent = False
     if webhook_url:
+        token = ""
         try:
+            token = settings.get_password("whatsapp_api_token") or ""
+        except Exception:
             token = ""
-            try:
-                token = settings.get_password("whatsapp_api_token") or ""
-            except Exception:
-                token = ""
-            body = json.dumps(
+
+        common_wa_meta = {
+            "delivery_note": doc.name,
+            "posting_date": posting_date,
+            "customer_name": customer_name,
+            "grand_total": float(doc.grand_total or 0.0),
+        }
+        if pdf_b64:
+            common_wa_meta["pdf_filename"] = pdf_filename
+            common_wa_meta["pdf_base64"] = pdf_b64
+            common_wa_meta["media_type"] = "application/pdf"
+
+        try:
+            whatsapp_sent = _post_whatsapp_webhook(
+                webhook_url,
+                token,
                 {
+                    **common_wa_meta,
+                    "event": "delivery_note_created",
+                    "recipient_type": "company",
+                    "chat_id": orders_chat_id,
                     "to": payload["whatsapp_number"],
                     "message": payload["text"],
-                    "delivery_note": doc.name,
-                    "customer_name": getattr(doc, "customer_name", None) or doc.customer,
-                    "grand_total": float(doc.grand_total or 0.0),
-                }
-            ).encode("utf-8")
-            headers = {"Content-Type": "application/json"}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            req = urllib.request.Request(webhook_url, data=body, headers=headers, method="POST")
-            urllib.request.urlopen(req, timeout=8)
-            whatsapp_sent = True
+                },
+            )
         except Exception:
             frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note WhatsApp Notification Error")
+
+        if client_phone:
+            try:
+                client_whatsapp_sent = _post_whatsapp_webhook(
+                    webhook_url,
+                    token,
+                    {
+                        **common_wa_meta,
+                        "event": "delivery_note_client",
+                        "recipient_type": "client",
+                        "chat_id": "",
+                        "to": client_phone,
+                        "message": client_mail["whatsapp_text"],
+                    },
+                )
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), "Cima VE Delivery Note Client WhatsApp Notification Error")
 
     return {
         "email_sent": email_sent,
@@ -263,7 +420,114 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
         "email_recipients": payload["email_recipients"],
         "whatsapp_sent": whatsapp_sent,
         "whatsapp_number": payload["whatsapp_number"],
+        "whatsapp_chat_id": orders_chat_id,
         "whatsapp_url": payload["whatsapp_url"],
+        "client_whatsapp_sent": client_whatsapp_sent,
+        "client_whatsapp_number": client_phone,
+        "client_whatsapp_url": client_mail.get("whatsapp_url") or "",
+        "pdf_attached": bool(pdf_bytes),
+    }
+
+
+def send_client_payment_whatsapp_notification(
+    *,
+    customer: str,
+    customer_name: str,
+    payment_amount: float,
+    payment_method: str,
+    reference: str = "",
+    registered_by: str = "",
+    allocations: list[dict] | None = None,
+    results: list[dict] | None = None,
+    total_pending_after: float = 0.0,
+    screenshot_url: str = "",
+) -> dict:
+    """Envía el comprobante del pago registrado al grupo de WhatsApp Capture de pagos vía webhook."""
+    import frappe
+
+    settings = frappe.get_single("Cima VE Settings")
+    target_wa = (
+        (settings.get("notify_whatsapp_number") or "").strip()
+        if settings.meta.has_field("notify_whatsapp_number")
+        else ""
+    )
+    webhook_url = (
+        (settings.get("whatsapp_webhook_url") or "").strip()
+        if settings.meta.has_field("whatsapp_webhook_url")
+        else ""
+    )
+    payments_chat_id = (
+        (settings.get("whatsapp_payments_chat_id") or "").strip()
+        if settings.meta.has_field("whatsapp_payments_chat_id")
+        else ""
+    ) or DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID
+
+    fx = _get_exchange_rate_snapshot()
+    bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+
+    res_by_dn = {
+        str(r.get("delivery_note") or ""): r
+        for r in (results or [])
+        if isinstance(r, dict) and r.get("delivery_note")
+    }
+    enriched_allocs: list[dict] = []
+    total_paid_bs = 0.0
+    for alloc in allocations or []:
+        dn_name = str(alloc.get("delivery_note") or "")
+        matched = res_by_dn.get(dn_name) or {}
+        total_paid_bs += float(matched.get("paid_now_bs") or 0.0)
+        enriched_allocs.append(
+            {
+                **alloc,
+                "new_estado": matched.get("ve_ne_estado") or alloc.get("new_estado") or "",
+            }
+        )
+
+    abs_screenshot = (screenshot_url or "").strip()
+    if abs_screenshot and abs_screenshot.startswith("/"):
+        try:
+            abs_screenshot = frappe.utils.get_url(abs_screenshot)
+        except Exception:
+            pass
+
+    registered_by_label = registered_by
+    if registered_by:
+        try:
+            registered_by_label = frappe.utils.get_fullname(registered_by) or registered_by
+        except Exception:
+            registered_by_label = registered_by
+
+    payload = build_payment_registered_whatsapp_payload(
+        customer_name=customer_name or customer,
+        payment_amount=payment_amount,
+        payment_method=payment_method,
+        reference=reference,
+        registered_by=registered_by_label,
+        allocations=enriched_allocs,
+        total_pending_after=total_pending_after,
+        bs_rate=bs_rate,
+        paid_now_bs=total_paid_bs,
+        screenshot_url=abs_screenshot,
+        whatsapp_number=target_wa or DEFAULT_NOTIFICATION_WHATSAPP,
+        chat_id=payments_chat_id,
+    )
+
+    whatsapp_sent = False
+    if webhook_url:
+        token = ""
+        try:
+            token = settings.get_password("whatsapp_api_token") or ""
+        except Exception:
+            token = ""
+        try:
+            whatsapp_sent = _post_whatsapp_webhook(webhook_url, token, payload)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Payment WhatsApp Notification Error")
+
+    return {
+        "whatsapp_sent": whatsapp_sent,
+        "chat_id": payments_chat_id,
+        "whatsapp_number": payload["to"],
     }
 
 
@@ -289,6 +553,31 @@ def _resolve_tax_account(company: str, keyword: str = "") -> str:
         return liab[0]
     any_acc = frappe.get_all("Account", filters={"company": company, "is_group": 0}, pluck="name", limit=1)
     return any_acc[0] if any_acc else ""
+
+
+def _resolve_customer_phone(customer: str, override_phone: str = "") -> str:
+    import frappe
+
+    candidate = (override_phone or "").strip()
+    if not candidate and customer:
+        candidate = (frappe.db.get_value("Customer", customer, "mobile_no") or "").strip()
+    if not candidate and customer:
+        links = frappe.get_all(
+            "Dynamic Link",
+            filters={"link_doctype": "Customer", "link_name": customer, "parenttype": "Contact"},
+            pluck="parent",
+            limit=5,
+        )
+        for contact_name in links:
+            c_phone = (
+                frappe.db.get_value("Contact", contact_name, "mobile_no")
+                or frappe.db.get_value("Contact", contact_name, "phone")
+                or ""
+            ).strip()
+            if c_phone:
+                candidate = c_phone
+                break
+    return candidate
 
 
 def _resolve_customer_email(customer: str, override_email: str = "") -> str:
@@ -348,6 +637,7 @@ def create_quick_delivery_note(
         frappe.throw(str(exc))
 
     resolved_email = _resolve_customer_email(customer, customer_email)
+    resolved_phone = _resolve_customer_phone(customer)
     if not resolved_email or "@" not in resolved_email or "." not in resolved_email.split("@")[-1]:
         frappe.throw("El correo electrónico del cliente es obligatorio para emitir la Nota de Entrega.")
 
@@ -402,6 +692,7 @@ def create_quick_delivery_note(
             "ve_ne_estado": "Pendiente",
             "ve_ne_fecha_vencimiento": validated_due_date,
             "ve_ne_cliente_email": resolved_email,
+            "ve_ne_cliente_telefono": resolved_phone,
             "remarks": (notes or default_remark).strip(),
             "items": dn_items,
         }
@@ -1365,6 +1656,27 @@ def register_client_payment(
         if not is_admin:
             frappe.set_user(current_user)
 
+    customer_label = clean_customer
+    if client_notes:
+        customer_label = str(client_notes[0].get("customer_name") or clean_customer).strip() or clean_customer
+
+    whatsapp_notif = {"whatsapp_sent": False, "chat_id": DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID}
+    try:
+        whatsapp_notif = send_client_payment_whatsapp_notification(
+            customer=clean_customer,
+            customer_name=customer_label,
+            payment_amount=plan["payment_amount"],
+            payment_method=payment_method,
+            reference=reference,
+            registered_by=current_user,
+            allocations=plan["allocations"],
+            results=results,
+            total_pending_after=plan["total_pending_after"],
+            screenshot_url=screenshot_url,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Cima VE Payment WhatsApp Notification Error")
+
     return {
         "ok": True,
         "customer": clean_customer,
@@ -1373,6 +1685,7 @@ def register_client_payment(
         "total_pending_after": plan["total_pending_after"],
         "allocations": plan["allocations"],
         "results": results,
+        "whatsapp_notification": whatsapp_notif,
     }
 
 
@@ -1437,18 +1750,68 @@ def get_delivery_note_document(
     }
     fx = (data.get("config") or {}).get("exchange_rate") or {}
     bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+    from urllib.parse import urlencode
+
+    pdf_query = urlencode(
+        {
+            k: v
+            for k, v in {
+                "delivery_note": dn_name,
+                "customer": "" if dn_name else cust_name,
+                "status_filter": status_filter,
+            }.items()
+            if v
+        }
+    )
+    pdf_download_url = f"/api/method/cima_ve.api.delivery_notes.download_delivery_note_pdf?{pdf_query}"
     doc_html = build_delivery_note_document_html(
         customer_info=customer_info,
         notes=selected,
         bs_rate=bs_rate,
         generated_at=str(today()),
+        pdf_download_url=pdf_download_url,
     )
     return {
         "ok": True,
         "customer": cust_name,
         "notes_count": len(selected),
         "html": doc_html,
+        "pdf_url": pdf_download_url,
     }
+
+
+@whitelist()
+def download_delivery_note_pdf(
+    delivery_note: str = "",
+    customer: str = "",
+    status_filter: str = "active",
+) -> None:
+    """Genera y descarga el PDF de una Nota de Entrega o estado de cuenta de un cliente."""
+    import frappe
+    from frappe.utils.pdf import get_pdf
+
+    res = get_delivery_note_document(
+        delivery_note=delivery_note,
+        customer=customer,
+        status_filter=status_filter,
+    )
+    doc_html = res.get("html") or ""
+    logo_rel = "/assets/cima_ve/images/cima-logo-color.png"
+    try:
+        logo_abs = frappe.utils.get_url(logo_rel)
+        if logo_abs and logo_rel in doc_html:
+            doc_html = doc_html.replace(logo_rel, logo_abs)
+    except Exception:
+        pass
+
+    pdf_bytes = get_pdf(doc_html)
+    dn_clean = (delivery_note or "").strip()
+    cust_clean = (res.get("customer") or customer or "Cliente").strip().replace(" ", "_")
+    filename = f"Nota_de_Entrega_{dn_clean}.pdf" if dn_clean else f"Notas_de_Entrega_{cust_clean}.pdf"
+
+    frappe.local.response.filename = filename
+    frappe.local.response.filecontent = pdf_bytes
+    frappe.local.response.type = "pdf"
 
 
 def _mark_delivery_note_paid_impl(
