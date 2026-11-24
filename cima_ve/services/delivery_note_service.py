@@ -834,6 +834,8 @@ def build_overdue_delivery_notes_email_html(
 
 DEFAULT_NOTIFICATION_EMAILS = ["cimaelectronic@gmail.com", "alexandermigueld@gmail.com"]
 DEFAULT_NOTIFICATION_WHATSAPP = "+584243472198"
+DEFAULT_WHATSAPP_ORDERS_CHAT_ID = "120363407788420645@g.us"
+DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID = "120363402853406963@g.us"
 
 
 def parse_notification_emails(raw_emails: str | None) -> list[str]:
@@ -1410,3 +1412,85 @@ def build_delivery_note_document_html(
   </div>
 </body>
 </html>"""
+
+
+def build_payment_registered_whatsapp_payload(
+    *,
+    customer_name: str,
+    payment_amount: float,
+    payment_method: str,
+    reference: str = "",
+    registered_by: str = "",
+    allocations: list[dict] | None = None,
+    total_pending_after: float = 0.0,
+    bs_rate: float = 0.0,
+    paid_now_bs: float = 0.0,
+    screenshot_url: str = "",
+    whatsapp_number: str | None = None,
+    chat_id: str | None = None,
+) -> dict:
+    """Construye el payload JSON y comprobante WhatsApp al registrar un pago de cliente."""
+    paid_usd = round(max(float(payment_amount or 0.0), 0.0), 2)
+    rate_bs = max(float(bs_rate or 0.0), 0.0)
+    paid_bs = round(float(paid_now_bs or 0.0), 2)
+    if paid_bs <= 0.0 and rate_bs > 0.0:
+        paid_bs = round(paid_usd * rate_bs, 2)
+    pending_after = round(max(float(total_pending_after or 0.0), 0.0), 2)
+    clean_customer = (customer_name or "").strip() or "Cliente"
+    clean_method = (payment_method or "").strip() or "Pago"
+    clean_ref = (reference or "").strip()
+    clean_user = (registered_by or "").strip()
+    clean_screenshot = (screenshot_url or "").strip()
+    target_wa = (whatsapp_number or "").strip() or DEFAULT_NOTIFICATION_WHATSAPP
+    target_chat_id = (chat_id or "").strip() or DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID
+
+    amount_line = f"Monto pagado: ${paid_usd:,.2f}"
+    if paid_bs > 0:
+        amount_line += f" (Bs. {paid_bs:,.2f})"
+
+    lines = [
+        "Pago registrado — CIMA Electronic VE",
+        f"Cliente: {clean_customer}",
+        amount_line,
+        f"Método de pago: {clean_method}",
+    ]
+    if clean_ref:
+        lines.append(f"Referencia: {clean_ref}")
+    if clean_user:
+        lines.append(f"Registrado por: {clean_user}")
+
+    dn_names: list[str] = []
+    alloc_rows = allocations or []
+    if alloc_rows:
+        lines.append("Notas aplicadas:")
+        for row in alloc_rows:
+            dn_name = str(row.get("delivery_note") or "").strip()
+            if dn_name:
+                dn_names.append(dn_name)
+            alloc_amt = round(float(row.get("allocated_amount") or row.get("paid_amount") or 0.0), 2)
+            estado = str(row.get("new_estado") or row.get("ve_ne_estado") or "").strip()
+            estado_txt = f" ({estado})" if estado else ""
+            lines.append(f"• {dn_name or 'Nota'}: ${alloc_amt:,.2f}{estado_txt}")
+
+    lines.append(f"Saldo pendiente del cliente: ${pending_after:,.2f}")
+    if clean_screenshot:
+        lines.append(f"Comprobante adjunto: {clean_screenshot}")
+
+    return {
+        "event": "payment_registered",
+        "recipient_type": "company_payments",
+        "chat_id": target_chat_id,
+        "to": target_wa,
+        "delivery_note": dn_names[0] if dn_names else "",
+        "delivery_notes": dn_names,
+        "customer_name": clean_customer,
+        "grand_total": paid_usd,
+        "payment_amount": paid_usd,
+        "payment_amount_bs": paid_bs,
+        "payment_method": clean_method,
+        "reference": clean_ref,
+        "registered_by": clean_user,
+        "total_pending_after": pending_after,
+        "screenshot_url": clean_screenshot,
+        "message": "\n".join(lines),
+    }

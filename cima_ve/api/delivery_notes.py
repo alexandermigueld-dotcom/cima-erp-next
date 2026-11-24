@@ -8,11 +8,14 @@ from cima_ve.services.delivery_note_service import (
     DEFAULT_COMMISSION_RULES,
     DEFAULT_NOTIFICATION_EMAILS,
     DEFAULT_NOTIFICATION_WHATSAPP,
+    DEFAULT_WHATSAPP_ORDERS_CHAT_ID,
+    DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID,
     allocate_client_payment_fifo,
     append_payment_history,
     build_client_delivery_note_email_html,
     build_delivery_note_document_html,
     build_delivery_note_notification_payload,
+    build_payment_registered_whatsapp_payload,
     compute_delivery_note_discounts,
     compute_delivery_note_settlement_totals,
     compute_historical_bs_payment,
@@ -243,6 +246,11 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
     raw_emails = (settings.get("notify_order_email") or "").strip() if settings.meta.has_field("notify_order_email") else ""
     target_wa = (settings.get("notify_whatsapp_number") or "").strip() if settings.meta.has_field("notify_whatsapp_number") else ""
     webhook_url = (settings.get("whatsapp_webhook_url") or "").strip() if settings.meta.has_field("whatsapp_webhook_url") else ""
+    orders_chat_id = (
+        (settings.get("whatsapp_orders_chat_id") or "").strip()
+        if settings.meta.has_field("whatsapp_orders_chat_id")
+        else ""
+    ) or DEFAULT_WHATSAPP_ORDERS_CHAT_ID
 
     fx = _get_exchange_rate_snapshot()
     bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
@@ -378,7 +386,9 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
                 token,
                 {
                     **common_wa_meta,
+                    "event": "delivery_note_created",
                     "recipient_type": "company",
+                    "chat_id": orders_chat_id,
                     "to": payload["whatsapp_number"],
                     "message": payload["text"],
                 },
@@ -393,7 +403,9 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
                     token,
                     {
                         **common_wa_meta,
+                        "event": "delivery_note_client",
                         "recipient_type": "client",
+                        "chat_id": "",
                         "to": client_phone,
                         "message": client_mail["whatsapp_text"],
                     },
@@ -408,11 +420,114 @@ def send_delivery_note_created_notifications(doc, extra_info: dict | None = None
         "email_recipients": payload["email_recipients"],
         "whatsapp_sent": whatsapp_sent,
         "whatsapp_number": payload["whatsapp_number"],
+        "whatsapp_chat_id": orders_chat_id,
         "whatsapp_url": payload["whatsapp_url"],
         "client_whatsapp_sent": client_whatsapp_sent,
         "client_whatsapp_number": client_phone,
         "client_whatsapp_url": client_mail.get("whatsapp_url") or "",
         "pdf_attached": bool(pdf_bytes),
+    }
+
+
+def send_client_payment_whatsapp_notification(
+    *,
+    customer: str,
+    customer_name: str,
+    payment_amount: float,
+    payment_method: str,
+    reference: str = "",
+    registered_by: str = "",
+    allocations: list[dict] | None = None,
+    results: list[dict] | None = None,
+    total_pending_after: float = 0.0,
+    screenshot_url: str = "",
+) -> dict:
+    """Envía el comprobante del pago registrado al grupo de WhatsApp Capture de pagos vía webhook."""
+    import frappe
+
+    settings = frappe.get_single("Cima VE Settings")
+    target_wa = (
+        (settings.get("notify_whatsapp_number") or "").strip()
+        if settings.meta.has_field("notify_whatsapp_number")
+        else ""
+    )
+    webhook_url = (
+        (settings.get("whatsapp_webhook_url") or "").strip()
+        if settings.meta.has_field("whatsapp_webhook_url")
+        else ""
+    )
+    payments_chat_id = (
+        (settings.get("whatsapp_payments_chat_id") or "").strip()
+        if settings.meta.has_field("whatsapp_payments_chat_id")
+        else ""
+    ) or DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID
+
+    fx = _get_exchange_rate_snapshot()
+    bs_rate = float(fx.get("adjusted_rate") or fx.get("bcv_rate") or 0.0)
+
+    res_by_dn = {
+        str(r.get("delivery_note") or ""): r
+        for r in (results or [])
+        if isinstance(r, dict) and r.get("delivery_note")
+    }
+    enriched_allocs: list[dict] = []
+    total_paid_bs = 0.0
+    for alloc in allocations or []:
+        dn_name = str(alloc.get("delivery_note") or "")
+        matched = res_by_dn.get(dn_name) or {}
+        total_paid_bs += float(matched.get("paid_now_bs") or 0.0)
+        enriched_allocs.append(
+            {
+                **alloc,
+                "new_estado": matched.get("ve_ne_estado") or alloc.get("new_estado") or "",
+            }
+        )
+
+    abs_screenshot = (screenshot_url or "").strip()
+    if abs_screenshot and abs_screenshot.startswith("/"):
+        try:
+            abs_screenshot = frappe.utils.get_url(abs_screenshot)
+        except Exception:
+            pass
+
+    registered_by_label = registered_by
+    if registered_by:
+        try:
+            registered_by_label = frappe.utils.get_fullname(registered_by) or registered_by
+        except Exception:
+            registered_by_label = registered_by
+
+    payload = build_payment_registered_whatsapp_payload(
+        customer_name=customer_name or customer,
+        payment_amount=payment_amount,
+        payment_method=payment_method,
+        reference=reference,
+        registered_by=registered_by_label,
+        allocations=enriched_allocs,
+        total_pending_after=total_pending_after,
+        bs_rate=bs_rate,
+        paid_now_bs=total_paid_bs,
+        screenshot_url=abs_screenshot,
+        whatsapp_number=target_wa or DEFAULT_NOTIFICATION_WHATSAPP,
+        chat_id=payments_chat_id,
+    )
+
+    whatsapp_sent = False
+    if webhook_url:
+        token = ""
+        try:
+            token = settings.get_password("whatsapp_api_token") or ""
+        except Exception:
+            token = ""
+        try:
+            whatsapp_sent = _post_whatsapp_webhook(webhook_url, token, payload)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Cima VE Payment WhatsApp Notification Error")
+
+    return {
+        "whatsapp_sent": whatsapp_sent,
+        "chat_id": payments_chat_id,
+        "whatsapp_number": payload["to"],
     }
 
 
@@ -1523,6 +1638,27 @@ def register_client_payment(
         if not is_admin:
             frappe.set_user(current_user)
 
+    customer_label = clean_customer
+    if client_notes:
+        customer_label = str(client_notes[0].get("customer_name") or clean_customer).strip() or clean_customer
+
+    whatsapp_notif = {"whatsapp_sent": False, "chat_id": DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID}
+    try:
+        whatsapp_notif = send_client_payment_whatsapp_notification(
+            customer=clean_customer,
+            customer_name=customer_label,
+            payment_amount=plan["payment_amount"],
+            payment_method=payment_method,
+            reference=reference,
+            registered_by=current_user,
+            allocations=plan["allocations"],
+            results=results,
+            total_pending_after=plan["total_pending_after"],
+            screenshot_url=screenshot_url,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Cima VE Payment WhatsApp Notification Error")
+
     return {
         "ok": True,
         "customer": clean_customer,
@@ -1531,6 +1667,7 @@ def register_client_payment(
         "total_pending_after": plan["total_pending_after"],
         "allocations": plan["allocations"],
         "results": results,
+        "whatsapp_notification": whatsapp_notif,
     }
 
 
