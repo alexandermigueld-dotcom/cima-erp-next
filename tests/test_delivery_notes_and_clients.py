@@ -921,6 +921,139 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         self.assertIn("openContactModal", tienda_js)
         self.assertIn("price_mode", tienda_js)
 
+    def test_client_and_cima_pdf_notifications_and_mobile_pdf_wiring(self) -> None:
+        import sys
+        import types
+        from unittest.mock import patch
+        from cima_ve.services.delivery_note_service import (
+            build_client_delivery_note_email_html,
+            build_delivery_note_document_html,
+            build_delivery_note_notification_payload,
+        )
+
+        # 1. Pure-Python client message & WhatsApp payload with date and Spanish thank-you
+        client_msg = build_client_delivery_note_email_html(
+            delivery_note="DN-200",
+            customer_name="Luis Rojas",
+            items=[{"item_name": "Inversor 2KW", "qty": 1, "rate": 320.0, "amount": 320.0}],
+            grand_total=320.0,
+            bs_rate=55.0,
+            due_date="2026-12-05",
+            seller_name="María",
+            posting_date="2026-11-24",
+            customer_phone="0414-5551234",
+        )
+        self.assertIn("Gracias por tu compra", client_msg["subject"])
+        self.assertIn("2026-11-24", client_msg["html"])
+        self.assertIn("PDF", client_msg["html"])
+        self.assertIn("Gracias por comprar con *CIMA Electronic VE*", client_msg["whatsapp_text"])
+        self.assertIn("2026-11-24", client_msg["whatsapp_text"])
+        self.assertIn("https://wa.me/584145551234", client_msg["whatsapp_url"])
+
+        # 2. CIMA tracking payload includes posting_date
+        cima_payload = build_delivery_note_notification_payload(
+            delivery_note="DN-200",
+            customer_name="Luis Rojas",
+            grand_total=320.0,
+            posting_date="2026-11-24",
+        )
+        self.assertIn("2026-11-24", cima_payload["text"])
+        self.assertIn("2026-11-24", cima_payload["html"])
+
+        # 3. Mobile-friendly document HTML includes viewport, table-wrap, and Descargar PDF button
+        doc_html = build_delivery_note_document_html(
+            customer_info={"customer_name": "Luis Rojas"},
+            notes=[{"name": "DN-200", "posting_date": "2026-11-24", "items": []}],
+            pdf_download_url="/api/method/cima_ve.api.delivery_notes.download_delivery_note_pdf?delivery_note=DN-200",
+        )
+        self.assertIn('name="viewport"', doc_html)
+        self.assertIn("table-wrap", doc_html)
+        self.assertIn("@media (max-width: 768px)", doc_html)
+        self.assertIn("Descargar PDF", doc_html)
+
+        # 4. send_delivery_note_created_notifications sends 1 email + 1 WA to CIMA and 1 email + 1 WA to client, all with PDF
+        sent_emails = []
+        sent_wa = []
+
+        class _FakeMeta:
+            def has_field(self, _name):
+                return True
+
+        class _FakeSettings:
+            meta = _FakeMeta()
+
+            def get(self, key):
+                return {
+                    "notify_order_email": "cima@example.com",
+                    "notify_whatsapp_number": "+584243472198",
+                    "whatsapp_webhook_url": "https://wa.example.com/send",
+                }.get(key, "")
+
+            def get_password(self, _key):
+                return "secret-tok"
+
+        fake_frappe = types.SimpleNamespace(
+            get_single=lambda _dt: _FakeSettings(),
+            sendmail=lambda **kwargs: sent_emails.append(kwargs),
+            log_error=lambda *a, **kw: None,
+            utils=types.SimpleNamespace(today=lambda: "2026-11-24"),
+            db=types.SimpleNamespace(get_value=lambda *a, **kw: ""),
+            get_all=lambda *a, **kw: [],
+        )
+        doc = types.SimpleNamespace(
+            name="DN-200",
+            customer="CUST-1",
+            customer_name="Luis Rojas",
+            posting_date="2026-11-24",
+            ve_ne_fecha_vencimiento="2026-12-05",
+            ve_vendedor_nombre="María",
+            ve_ne_origen="Facturación Rápida",
+            ve_ne_cliente_email="luis@example.com",
+            ve_ne_cliente_telefono="+584145551234",
+            grand_total=320.0,
+            discount_amount=0.0,
+            items=[types.SimpleNamespace(item_code="INV-2K", item_name="Inversor 2KW", qty=1, rate=320.0, amount=320.0)],
+        )
+
+        from cima_ve.api import delivery_notes as dn_api
+
+        with patch.dict(sys.modules, {"frappe": fake_frappe}), \
+             patch.object(dn_api, "_get_exchange_rate_snapshot", return_value={"bcv_rate": 55.0, "adjusted_rate": 55.0}), \
+             patch.object(dn_api, "_generate_delivery_note_pdf_bytes_for_doc", return_value=b"%PDF-1.4 fake"), \
+             patch.object(dn_api, "_post_whatsapp_webhook", side_effect=lambda _u, _t, p: sent_wa.append(p) or True):
+            res = dn_api.send_delivery_note_created_notifications(doc)
+
+        self.assertTrue(res["email_sent"])
+        self.assertTrue(res["client_email_sent"])
+        self.assertTrue(res["whatsapp_sent"])
+        self.assertTrue(res["client_whatsapp_sent"])
+        self.assertTrue(res["pdf_attached"])
+        self.assertEqual(len(sent_emails), 2)
+        self.assertEqual(sent_emails[0]["recipients"], ["cima@example.com"])
+        self.assertEqual(sent_emails[1]["recipients"], ["luis@example.com"])
+        self.assertEqual(sent_emails[0]["attachments"][0]["fname"], "Nota_de_Entrega_DN-200.pdf")
+        self.assertEqual(sent_emails[1]["attachments"][0]["fname"], "Nota_de_Entrega_DN-200.pdf")
+
+        self.assertEqual(len(sent_wa), 2)
+        self.assertEqual(sent_wa[0]["recipient_type"], "company")
+        self.assertEqual(sent_wa[0]["to"], "+584243472198")
+        self.assertIn("pdf_base64", sent_wa[0])
+        self.assertEqual(sent_wa[1]["recipient_type"], "client")
+        self.assertEqual(sent_wa[1]["to"], "+584145551234")
+        self.assertIn("pdf_base64", sent_wa[1])
+        self.assertIn("2026-11-24", sent_wa[1]["message"])
+
+        # 5. Frontend mobile PDF wiring check
+        root = pathlib.Path(__file__).resolve().parent.parent
+        ne_js = (root / "cima_ve" / "cima_ve" / "page" / "notas_entrega" / "notas_entrega.js").read_text(encoding="utf-8")
+        vr_js = (root / "cima_ve" / "cima_ve" / "page" / "venta_rapida" / "venta_rapida.js").read_text(encoding="utf-8")
+        dn_py = (root / "cima_ve" / "api" / "delivery_notes.py").read_text(encoding="utf-8")
+
+        self.assertIn("download_delivery_note_pdf", dn_py)
+        self.assertIn("download_delivery_note_pdf", ne_js)
+        self.assertIn("download_delivery_note_pdf", vr_js)
+        self.assertLess(ne_js.index('window.open("", "_blank")'), ne_js.index("cima_ve.api.delivery_notes.get_delivery_note_document"))
+
 
 if __name__ == "__main__":
     unittest.main()
