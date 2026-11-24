@@ -1054,6 +1054,97 @@ class DeliveryNotePermissionTests(unittest.TestCase):
         self.assertIn("download_delivery_note_pdf", vr_js)
         self.assertLess(ne_js.index('window.open("", "_blank")'), ne_js.index("cima_ve.api.delivery_notes.get_delivery_note_document"))
 
+    def test_whatsapp_group_routing_for_orders_and_registered_payments(self) -> None:
+        import sys
+        import types
+        from unittest.mock import patch
+        from cima_ve.api import delivery_notes as dn_api
+        from cima_ve.services.delivery_note_service import (
+            DEFAULT_WHATSAPP_ORDERS_CHAT_ID,
+            DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID,
+            build_payment_registered_whatsapp_payload,
+        )
+
+        # 1. Pure payment receipt builder
+        pay_payload = build_payment_registered_whatsapp_payload(
+            customer_name="Luis Rojas",
+            payment_amount=120.0,
+            payment_method="Pago Móvil / Bs",
+            reference="998877",
+            registered_by="Daniela",
+            allocations=[
+                {"delivery_note": "MAT-DN-2026-00031", "allocated_amount": 100.0, "new_estado": "Pagada"},
+                {"delivery_note": "MAT-DN-2026-00032", "allocated_amount": 20.0, "new_estado": "Pago Parcial"},
+            ],
+            total_pending_after=30.0,
+            bs_rate=60.0,
+            screenshot_url="https://cimaelectronicve.v.frappe.cloud/private/files/capture.jpg",
+        )
+        self.assertEqual(pay_payload["event"], "payment_registered")
+        self.assertEqual(pay_payload["chat_id"], DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID)
+        self.assertIn("Luis Rojas", pay_payload["message"])
+        self.assertIn("$120.00", pay_payload["message"])
+        self.assertIn("Bs. 7,200.00", pay_payload["message"])
+        self.assertIn("998877", pay_payload["message"])
+        self.assertIn("Daniela", pay_payload["message"])
+        self.assertIn("MAT-DN-2026-00031", pay_payload["message"])
+        self.assertIn("capture.jpg", pay_payload["message"])
+
+        # 2. Live helper routes payments to Capture de pagos group & resolves absolute screenshot URL
+        sent_wa = []
+
+        class _FakeMeta:
+            def has_field(self, _name):
+                return True
+
+        class _FakeSettings:
+            meta = _FakeMeta()
+
+            def get(self, key):
+                return {
+                    "notify_whatsapp_number": "+584243472198",
+                    "whatsapp_webhook_url": "https://hook.us2.make.com/demo",
+                    "whatsapp_orders_chat_id": DEFAULT_WHATSAPP_ORDERS_CHAT_ID,
+                    "whatsapp_payments_chat_id": DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID,
+                }.get(key, "")
+
+            def get_password(self, _key):
+                return ""
+
+        fake_frappe = types.SimpleNamespace(
+            get_single=lambda _dt: _FakeSettings(),
+            log_error=lambda *a, **kw: None,
+            utils=types.SimpleNamespace(
+                get_url=lambda path: f"https://cimaelectronicve.v.frappe.cloud{path}",
+                get_fullname=lambda u: "Daniela" if u == "valeria0205sz@gmail.com" else u,
+            ),
+        )
+
+        with patch.dict(sys.modules, {"frappe": fake_frappe}), \
+             patch.object(dn_api, "_get_exchange_rate_snapshot", return_value={"bcv_rate": 60.0, "adjusted_rate": 65.0}), \
+             patch.object(dn_api, "_post_whatsapp_webhook", side_effect=lambda _u, _t, p: sent_wa.append(p) or True):
+            res = dn_api.send_client_payment_whatsapp_notification(
+                customer="CUST-1",
+                customer_name="Luis Rojas",
+                payment_amount=50.0,
+                payment_method="Zelle",
+                reference="Z-1234",
+                registered_by="valeria0205sz@gmail.com",
+                allocations=[{"delivery_note": "MAT-DN-2026-00031", "allocated_amount": 50.0}],
+                results=[{"delivery_note": "MAT-DN-2026-00031", "ve_ne_estado": "Pagada", "paid_now_bs": 3250.0}],
+                total_pending_after=0.0,
+                screenshot_url="/private/files/pago.png",
+            )
+
+        self.assertTrue(res["whatsapp_sent"])
+        self.assertEqual(res["chat_id"], DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID)
+        self.assertEqual(len(sent_wa), 1)
+        self.assertEqual(sent_wa[0]["event"], "payment_registered")
+        self.assertEqual(sent_wa[0]["chat_id"], DEFAULT_WHATSAPP_PAYMENTS_CHAT_ID)
+        self.assertEqual(sent_wa[0]["screenshot_url"], "https://cimaelectronicve.v.frappe.cloud/private/files/pago.png")
+        self.assertIn("Daniela", sent_wa[0]["message"])
+        self.assertIn("Pagada", sent_wa[0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

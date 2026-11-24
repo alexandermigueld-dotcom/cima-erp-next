@@ -40,6 +40,8 @@
   "notify_whatsapp_number",
   "whatsapp_webhook_url",
   "whatsapp_api_token",
+  "whatsapp_orders_chat_id",
+  "whatsapp_payments_chat_id",
   "discounts_section",
   "auto_discount_enabled",
   "auto_discount_tiers",
@@ -278,6 +280,20 @@
    "fieldname": "whatsapp_api_token",
    "fieldtype": "Password",
    "label": "WhatsApp API Token (Opcional)"
+  },
+  {
+   "default": "120363407788420645@g.us",
+   "description": "ID del chat o grupo de WhatsApp para avisos de Notas de Entrega (ej. 120363407788420645@g.us para el grupo PEDIDOS).",
+   "fieldname": "whatsapp_orders_chat_id",
+   "fieldtype": "Data",
+   "label": "WhatsApp Chat/Grupo de Pedidos (Notas de Entrega)"
+  },
+  {
+   "default": "120363402853406963@g.us",
+   "description": "ID del chat o grupo de WhatsApp para avisos de pagos registrados (ej. 120363402853406963@g.us para Capture de pagos).",
+   "fieldname": "whatsapp_payments_chat_id",
+   "fieldtype": "Data",
+   "label": "WhatsApp Chat/Grupo de Capture de Pagos"
   },
   {
    "fieldname": "discounts_section",
